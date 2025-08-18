@@ -74,10 +74,8 @@ LOGO_URL = (
 # Drop dropbox-delen så → direkte URL:
 LOGO_URL = LOGO_URL.replace("www.dropbox.com", "dl.dropboxusercontent.com").replace("dl=0", "raw=1")
 
-
 PAGE_TITLE = "Throw-in Analysis"
-PAGE_ICON = LOGO_URL  
-
+PAGE_ICON = LOGO_URL
 
 TEAM_NAME = "FC København"
 TEAM_ALIASES = {
@@ -86,7 +84,6 @@ TEAM_ALIASES = {
 }
 
 st.set_page_config(page_title=PAGE_TITLE, page_icon=PAGE_ICON, layout="wide")
-
 
 st.markdown(f"""
 <style>
@@ -162,7 +159,7 @@ if not _base.exists():
 st.sidebar.caption("Tip: Læg logo i `assets/fck_logo.png` eller justér sti i koden.")
 
 # =========================
-# Hjælpere (fælles)  (unchanged)
+# Hjælpere (fælles)
 # =========================
 def natural_key(s: str):
     return [int(t) if t.isdigit() else t.lower() for t in re.findall(r"\d+|\D+", s)]
@@ -233,7 +230,7 @@ def collect_round_data(round_dir: Path):
     return rows
 
 # =========================
-# Throw-in analyse – parsing (unchanged)
+# Throw-in analyse – parsing
 # =========================
 EVENT_TYPE_PASS = 1
 EVENT_TYPE_BALL_OUT = 5
@@ -348,6 +345,13 @@ def _compute_throwin_delays(events):
             j += 1
     return rows
 
+# --- Outlier setup (fast grænse) ---
+OUTLIER_THR = 40  # sekunder
+
+def _mark_outliers(df: pd.DataFrame, thr: float = OUTLIER_THR) -> pd.Series:
+    d = pd.to_numeric(df.get("Delay (s)"), errors="coerce")
+    return d > float(thr)
+
 @st.cache_data(show_spinner=False)
 def parse_throwin_delays_from_f24_cached(f24_str_path: str, f7_str_path: str | None, cache_buster: int = 5):
     f24_path = Path(f24_str_path)
@@ -371,7 +375,7 @@ def parse_throwin_delays_from_f24_cached(f24_str_path: str, f7_str_path: str | N
     return pd.DataFrame(all_rows)
 
 # =========================
-# UI: Tabs (unchanged)
+# UI: Tabs
 # =========================
 tab_superliga, tab_matches, tab_data = st.tabs(
     ["Throw in overview", "Matches", "Throw in Data"]
@@ -404,6 +408,7 @@ with tab_superliga:
                             ["All", "First 1/3", "Second 1/3", "Last 1/3"],
                             horizontal=True, key="superliga_third_filter")
 
+    # Saml kast på tværs af valgte runder
     all_rows = []
     for round_dir in round_dirs:
         rows = collect_round_data(round_dir)
@@ -436,45 +441,60 @@ with tab_superliga:
 
     season_df["Delay (s)"] = pd.to_numeric(season_df["Delay (s)"], errors="coerce")
 
-    g = season_df.groupby("Team", dropna=False)
+    # === Outlier-flag + beregninger uden outliers ===
+    season_df["is_outlier"] = _mark_outliers(season_df)
+    season_df_used = season_df[~season_df["is_outlier"]].copy()
+
+    g = season_df_used.groupby("Team", dropna=False)
     overview = pd.DataFrame({
         "Games": g["Match"].nunique(),
         "Total throw-ins": g.size(),
         "Avg. delay (s)": g["Delay (s)"].mean().round(2),
-        "Throw-ins <7s": g.apply(lambda x: (x["Delay (s)"] < 7).sum()),
+        "Throw-ins <7s": g.apply(lambda x: (pd.to_numeric(x["Delay (s)"], errors="coerce") < 7).sum()),
     }).reset_index()
     overview["Throw-ins per game"] = (overview["Total throw-ins"] / overview["Games"]).round(2)
 
-# Altair chart (unchanged)
+# Altair chart – uændret, men bruger nu overview uden outliers
 import altair as alt
+
 metric = st.selectbox("Choose metric",
                       ["Avg. delay (s)", "Throw-ins per game",
                        "Total throw-ins", "Throw-ins <7s"])
+
 overview_sorted = overview.sort_values([metric, "Team"], ascending=[False, True]).reset_index(drop=True)
+
 chart_df = pd.DataFrame({
     "Team": overview_sorted["Team"],
     "Value": pd.to_numeric(overview_sorted[metric], errors="coerce"),
 }).dropna()
 chart_df["is_FCK"] = chart_df["Team"].apply(lambda t: t in TEAM_ALIASES)
+
+# Eksplicit sorteringsorden = rækkefølgen i overview_sorted
 team_order = overview_sorted["Team"].tolist()
 chart_h = max(300, len(chart_df) * 32)
+
 chart = (
     alt.Chart(chart_df, height=chart_h, width="container")
       .mark_bar()
       .encode(
           y=alt.Y("Team:N", sort=team_order, title="Team"),
           x=alt.X("Value:Q", title=metric),
-          color=alt.condition(alt.datum.is_FCK, alt.value(BRAND["primary"]), alt.value("#A1A1A1")),
+          color=alt.condition(alt.datum.is_FCK,
+                              alt.value(BRAND["primary"]),     # FCK
+                              alt.value("#A1A1A1")),           # øvrige
           tooltip=["Team", "Value"]
       )
       .configure_legend(disable=True)
 )
+
 st.altair_chart(chart, use_container_width=True)
+
 st.dataframe(overview_sorted, hide_index=True)
 
 with st.expander("Raw indkast (alle kampe)"):
     raw_cols = ["Round", "Match", "Side", "Third", "Zone", "x", "y", "Period",
-                "Ball out (mm:ss)", "Throw-in (mm:ss)", "Delay (s)", "Team", "Game date", "is_FCK"]
+                "Ball out (mm:ss)", "Throw-in (mm:ss)", "Delay (s)", "Team", "Game date",
+                "is_outlier", "is_FCK"]  # tilføjet is_outlier
     raw_cols = [c for c in raw_cols if c in season_df.columns]
     st.dataframe(season_df[raw_cols], hide_index=True)
 
@@ -523,14 +543,22 @@ with tab_data:
                 df_throw["Throw-in #"] = range(1, len(df_throw)+1)
                 df_throw["is_FCK"] = df_throw["Team"].apply(lambda t: t in TEAM_ALIASES)
 
-                side_tog = st.radio("Side", ["All", "Home", "Away"], horizontal=True, key="data_side_filter")
-                period_tog = st.radio("Periode", ["All", "1", "2"], horizontal=True, key="data_period_filter")
-                delay_tog = st.radio("Delay-filter", ["All", "< 7s only"], horizontal=True, key="data_delay_filter")
+                # --- Outliers i match-fanen: flag + ekskludér i plot ---
+                df_throw["is_outlier"] = _mark_outliers(df_throw, OUTLIER_THR)
+
+                # Toggles (øverst)
+                side_tog = st.radio("Side", ["All", "Home", "Away"],
+                                    horizontal=True, key="data_side_filter")
+                period_tog = st.radio("Periode", ["All", "1", "2"],
+                                      horizontal=True, key="data_period_filter")
+                delay_tog = st.radio("Delay-filter", ["All", "< 7s only"],
+                                     horizontal=True, key="data_delay_filter")
                 third_tog = st.radio("Tredjedel (absolut)",
                                      ["All", "First 1/3", "Second 1/3", "Last 1/3"],
                                      horizontal=True, key="data_third_filter")
 
-                df_plot = df_throw.copy()
+                # Anvend filtre (plot kører uden outliers)
+                df_plot = df_throw[~df_throw["is_outlier"]].copy()
                 if side_tog != "All":
                     df_plot = df_plot[df_plot["Side"] == side_tog]
                 if period_tog != "All":
@@ -607,7 +635,7 @@ with tab_data:
                     display_cols = [
                         "Period", "Ball out (mm:ss)", "Throw-in (mm:ss)",
                         "Delay (s)", "Team", "Side", "Third", "Zone",
-                        "x", "y", "Game date", "Throw-in #", "is_FCK"
+                        "x", "y", "Game date", "Throw-in #", "is_outlier", "is_FCK"  # tilføjet is_outlier
                     ]
-                    show_cols = [c for c in display_cols if c in df_plot.columns]
-                    st.dataframe(df_plot[show_cols], hide_index=True, height=360)
+                    show_cols = [c for c in display_cols if c in df_throw.columns]
+                    st.dataframe(df_throw[show_cols], hide_index=True, height=360)
