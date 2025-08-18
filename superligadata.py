@@ -112,7 +112,7 @@ header_cols = st.columns([0.2, 0.8])  # <-- giv logoet ~20% bredde (justér fx t
 with header_cols[0]:
     try:
         # lad billedet fylde kolonnen; så skaleres det automatisk op til kolonnebredden
-        st.image(LOGO_URL, use_container_width=True)
+        st.image(LOGO_URL, width=120)   # prøv 100–150 afhængigt af hvor stort det skal være
     except Exception:
         st.markdown("<div class='badge'>FCK</div>", unsafe_allow_html=True)
 
