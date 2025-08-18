@@ -67,8 +67,13 @@ BRAND = {
     "grey":    "#001E96",
 }
 
-LOGO_URL = "https://www.dropbox.com/scl/fi/d8g9f0wl4h1o8dk1uyii8/FC_Copenhagen_logo.svg.png?rlkey=gjhtb4z99nl2m5j3xgu3vwv3y&st=v5gbm2s3&dl=0"
+LOGO_URL = (
+    "https://www.dropbox.com/scl/fi/egr4olrw44a22nfptcbsb/FC_Copenhagen_logo.svg.png"
+    "?rlkey=sk5my2fzqtzmbnj0zqo9vg0rf&st=g9ezcgzq&dl=0"
+)
+# Drop dropbox-delen så → direkte URL:
 LOGO_URL = LOGO_URL.replace("www.dropbox.com", "dl.dropboxusercontent.com").replace("dl=0", "raw=1")
+
 
 PAGE_TITLE = "Throw-in Analysis"
 PAGE_ICON = LOGO_URL  
@@ -104,20 +109,24 @@ section[data-testid="stSidebar"] .stHeading, .stSidebar h2, .stSidebar h3 {{ col
 </style>
 """, unsafe_allow_html=True)
 
-# Header (unchanged)
-header_cols = st.columns([0.08, 0.92])
+# Header (med bredere logo-kolonne)
+header_cols = st.columns([0.2, 0.8])  # <-- giv logoet ~20% bredde (justér fx til 0.18/0.82)
+
 with header_cols[0]:
     try:
+        # lad billedet fylde kolonnen; så skaleres det automatisk op til kolonnebredden
         st.image(LOGO_URL, use_container_width=True)
     except Exception:
-        st.markdown(f"<div class='badge'>FCK</div>", unsafe_allow_html=True)
+        st.markdown("<div class='badge'>FCK</div>", unsafe_allow_html=True)
+
 with header_cols[1]:
     st.markdown(f"""
     <div class="fck-header">
-      <div class="fck-kicker">F.C. Copenhagen analytics</div>
+      <div class="fck-kicker"></div>
       <h1>{PAGE_TITLE}</h1>
     </div>
     """, unsafe_allow_html=True)
+
 
 # =========================
 # Sidebar: indstillinger
