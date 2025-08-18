@@ -66,9 +66,13 @@ BRAND = {
     "muted":   "#001E96",
     "grey":    "#001E96",
 }
-LOGO_PATH = "/Volumes/10eren-Analyse/[8] Data/Superliga Data 25/26/FC_Copenhagen_logo.svg.png"
-PAGE_TITLE = "F.C. København - Throw-in Analysis"
-PAGE_ICON = LOGO_PATH
+
+LOGO_URL = "https://www.dropbox.com/scl/fi/d8g9f0wl4h1o8dk1uyii8/FC_Copenhagen_logo.svg.png?rlkey=gjhtb4z99nl2m5j3xgu3vwv3y&st=v5gbm2s3&dl=0"
+LOGO_URL = LOGO_URL.replace("www.dropbox.com", "dl.dropboxusercontent.com").replace("dl=0", "raw=1")
+
+PAGE_TITLE = "Throw-in Analysis"
+PAGE_ICON = LOGO_URL  
+
 
 TEAM_NAME = "FC København"
 TEAM_ALIASES = {
@@ -78,7 +82,7 @@ TEAM_ALIASES = {
 
 st.set_page_config(page_title=PAGE_TITLE, page_icon=PAGE_ICON, layout="wide")
 
-# Global CSS (unchanged)
+
 st.markdown(f"""
 <style>
 .stApp {{ background: linear-gradient(180deg, {BRAND["bg"]} 0%, #FFFFFF 100%); color: {BRAND["text"]}; }}
@@ -104,13 +108,13 @@ section[data-testid="stSidebar"] .stHeading, .stSidebar h2, .stSidebar h3 {{ col
 header_cols = st.columns([0.08, 0.92])
 with header_cols[0]:
     try:
-        st.image(LOGO_PATH, use_container_width=True)
+        st.image(LOGO_URL, use_container_width=True)
     except Exception:
         st.markdown(f"<div class='badge'>FCK</div>", unsafe_allow_html=True)
 with header_cols[1]:
     st.markdown(f"""
     <div class="fck-header">
-      <div class="fck-kicker">Analyse</div>
+      <div class="fck-kicker">F.C. Copenhagen analytics</div>
       <h1>{PAGE_TITLE}</h1>
     </div>
     """, unsafe_allow_html=True)
