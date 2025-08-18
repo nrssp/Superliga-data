@@ -71,7 +71,7 @@ LOGO_URL = (
     "https://www.dropbox.com/scl/fi/egr4olrw44a22nfptcbsb/FC_Copenhagen_logo.svg.png"
     "?rlkey=sk5my2fzqtzmbnj0zqo9vg0rf&st=g9ezcgzq&dl=0"
 )
-# Drop dropbox-delen så → direkte URL:
+# Direkte (rå) URL i stedet for web-view:
 LOGO_URL = LOGO_URL.replace("www.dropbox.com", "dl.dropboxusercontent.com").replace("dl=0", "raw=1")
 
 PAGE_TITLE = "Throw-in Analysis"
@@ -84,6 +84,19 @@ TEAM_ALIASES = {
 }
 
 st.set_page_config(page_title=PAGE_TITLE, page_icon=PAGE_ICON, layout="wide")
+
+# --- NEW: Hent logo som bytes (fix til iOS/Safari) ---------------------------
+@st.cache_resource(show_spinner=False)
+def fetch_logo_bytes(url: str) -> bytes | None:
+    try:
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; StreamlitLogoFetcher/1.0)"}
+        r = requests.get(url, headers=headers, timeout=15)
+        r.raise_for_status()
+        return r.content
+    except Exception:
+        return None
+# -----------------------------------------------------------------------------
+
 
 st.markdown(f"""
 <style>
@@ -107,14 +120,19 @@ section[data-testid="stSidebar"] .stHeading, .stSidebar h2, .stSidebar h3 {{ col
 """, unsafe_allow_html=True)
 
 # Header (med bredere logo-kolonne)
-header_cols = st.columns([0.2, 0.8])  # <-- giv logoet ~20% bredde (justér fx til 0.18/0.82)
+header_cols = st.columns([0.2, 0.8])  # kan justeres fx [0.18, 0.82]
 
 with header_cols[0]:
-    try:
-        # lad billedet fylde kolonnen; så skaleres det automatisk op til kolonnebredden
-        st.image(LOGO_URL, width=120)   # prøv 100–150 afhængigt af hvor stort det skal være
-    except Exception:
-        st.markdown("<div class='badge'>FCK</div>", unsafe_allow_html=True)
+    logo_bytes = fetch_logo_bytes(LOGO_URL)
+    if logo_bytes:
+        # Brug bytes => stabil visning på mobil og desktop
+        st.image(logo_bytes, use_container_width=True)
+    else:
+        # Fallback: prøv direkte URL, og ellers badge
+        try:
+            st.image(LOGO_URL, use_container_width=True)
+        except Exception:
+            st.markdown("<div class='badge'>FCK</div>", unsafe_allow_html=True)
 
 with header_cols[1]:
     st.markdown(f"""
@@ -130,7 +148,7 @@ with header_cols[1]:
 # =========================
 st.sidebar.subheader("Indstillinger")
 
-# NEW: Dropbox sync button + base path default from local cache if found
+# Dropbox sync
 if st.sidebar.button("🔄 Sync data from Dropbox"):
     try:
         _download_dropbox_folder_zip(REMOTE_DROPBOX_FOLDER, LOCAL_CACHE)
@@ -292,7 +310,8 @@ def _parse_game_events(game_elem, team_name_map=None, team_side_map=None):
             "type_id": type_id, "period_id": period_id, "team_id": team_id,
             "team_name": team_name, "team_side": team_side,
             "min": min_, "sec": sec_, "time_s": time_s,
-            "x": x, "y": y, "qualifiers": quals,
+            "x": x, "y": y,
+            "qualifiers": quals,
             "game_date": game_meta["game_date"],
         })
     events.sort(key=lambda x: (x["period_id"], x["time_s"]))
@@ -446,55 +465,51 @@ with tab_superliga:
     season_df_used = season_df[~season_df["is_outlier"]].copy()
 
     g = season_df_used.groupby("Team", dropna=False)
-    overview = pd.DataFrame({
-        "Games": g["Match"].nunique(),
-        "Total throw-ins": g.size(),
-        "Avg. delay (s)": g["Delay (s)"].mean().round(2),
-        "Throw-ins <7s": g.apply(lambda x: (pd.to_numeric(x["Delay (s)"], errors="coerce") < 7).sum()),
-    }).reset_index()
+
+    # Udregn også total delay for at kunne vise "Delay per throw-in"
+    games = g["Match"].nunique().rename("Games")
+    tot_throw = g.size().rename("Total throw-ins")
+    avg_delay = g["Delay (s)"].mean().round(2).rename("Avg. delay (s)")
+    lt7 = g.apply(lambda x: (pd.to_numeric(x["Delay (s)"], errors="coerce") < 7).sum()).rename("Throw-ins <7s")
+    total_delay = g["Delay (s)"].sum().round(1).rename("Total delay (s)")
+
+    overview = pd.concat([games, tot_throw, avg_delay, lt7, total_delay], axis=1).reset_index()
     overview["Throw-ins per game"] = (overview["Total throw-ins"] / overview["Games"]).round(2)
+    overview["Delay per throw-in (s)"] = (overview["Total delay (s)"] / overview["Total throw-ins"]).round(2)
 
-# Altair chart – uændret, men bruger nu overview uden outliers
+# Altair chart – med ny metric
 import altair as alt
-
-metric = st.selectbox("Choose metric",
-                      ["Avg. delay (s)", "Throw-ins per game",
-                       "Total throw-ins", "Throw-ins <7s"])
-
+metric = st.selectbox(
+    "Choose metric",
+    ["Avg. delay (s)", "Delay per throw-in (s)", "Throw-ins per game",
+     "Total throw-ins", "Throw-ins <7s", "Total delay (s)"]
+)
 overview_sorted = overview.sort_values([metric, "Team"], ascending=[False, True]).reset_index(drop=True)
-
 chart_df = pd.DataFrame({
     "Team": overview_sorted["Team"],
     "Value": pd.to_numeric(overview_sorted[metric], errors="coerce"),
 }).dropna()
 chart_df["is_FCK"] = chart_df["Team"].apply(lambda t: t in TEAM_ALIASES)
-
-# Eksplicit sorteringsorden = rækkefølgen i overview_sorted
 team_order = overview_sorted["Team"].tolist()
 chart_h = max(300, len(chart_df) * 32)
-
 chart = (
     alt.Chart(chart_df, height=chart_h, width="container")
       .mark_bar()
       .encode(
           y=alt.Y("Team:N", sort=team_order, title="Team"),
           x=alt.X("Value:Q", title=metric),
-          color=alt.condition(alt.datum.is_FCK,
-                              alt.value(BRAND["primary"]),     # FCK
-                              alt.value("#A1A1A1")),           # øvrige
+          color=alt.condition(alt.datum.is_FCK, alt.value(BRAND["primary"]), alt.value("#A1A1A1")),
           tooltip=["Team", "Value"]
       )
       .configure_legend(disable=True)
 )
-
 st.altair_chart(chart, use_container_width=True)
-
 st.dataframe(overview_sorted, hide_index=True)
 
 with st.expander("Raw indkast (alle kampe)"):
     raw_cols = ["Round", "Match", "Side", "Third", "Zone", "x", "y", "Period",
                 "Ball out (mm:ss)", "Throw-in (mm:ss)", "Delay (s)", "Team", "Game date",
-                "is_outlier", "is_FCK"]  # tilføjet is_outlier
+                "is_outlier", "is_FCK"]
     raw_cols = [c for c in raw_cols if c in season_df.columns]
     st.dataframe(season_df[raw_cols], hide_index=True)
 
@@ -543,16 +558,12 @@ with tab_data:
                 df_throw["Throw-in #"] = range(1, len(df_throw)+1)
                 df_throw["is_FCK"] = df_throw["Team"].apply(lambda t: t in TEAM_ALIASES)
 
-                # --- Outliers i match-fanen: flag + ekskludér i plot ---
+                # Outliers i match-fanen: flag + ekskludér i plot
                 df_throw["is_outlier"] = _mark_outliers(df_throw, OUTLIER_THR)
 
-                # Toggles (øverst)
-                side_tog = st.radio("Side", ["All", "Home", "Away"],
-                                    horizontal=True, key="data_side_filter")
-                period_tog = st.radio("Periode", ["All", "1", "2"],
-                                      horizontal=True, key="data_period_filter")
-                delay_tog = st.radio("Delay-filter", ["All", "< 7s only"],
-                                     horizontal=True, key="data_delay_filter")
+                side_tog = st.radio("Side", ["All", "Home", "Away"], horizontal=True, key="data_side_filter")
+                period_tog = st.radio("Periode", ["All", "1", "2"], horizontal=True, key="data_period_filter")
+                delay_tog = st.radio("Delay-filter", ["All", "< 7s only"], horizontal=True, key="data_delay_filter")
                 third_tog = st.radio("Tredjedel (absolut)",
                                      ["All", "First 1/3", "Second 1/3", "Last 1/3"],
                                      horizontal=True, key="data_third_filter")
@@ -635,7 +646,7 @@ with tab_data:
                     display_cols = [
                         "Period", "Ball out (mm:ss)", "Throw-in (mm:ss)",
                         "Delay (s)", "Team", "Side", "Third", "Zone",
-                        "x", "y", "Game date", "Throw-in #", "is_outlier", "is_FCK"  # tilføjet is_outlier
+                        "x", "y", "Game date", "Throw-in #", "is_outlier", "is_FCK"
                     ]
                     show_cols = [c for c in display_cols if c in df_throw.columns]
                     st.dataframe(df_throw[show_cols], hide_index=True, height=360)
