@@ -946,7 +946,7 @@ with tab_data:
 
                     pitch = Pitch(pitch_type="opta", line_zorder=2,
                                   pitch_color="white", line_color="black")
-                    fig, ax = pitch.draw(figsize=(4.8, 3.2), dpi=140)
+                    fig, ax = pitch.draw(figsize=(5.6, 4.2))
 
                     if df_plot.empty:
                         st.info("Ingen indkast matcher de valgte filtre.")
