@@ -597,16 +597,15 @@ def parse_throwin_delays_from_f24_cached(
         for r in df_enriched.to_dict("records"):
             r["Game date"] = game_meta.get("game_date", "")
             all_rows.append(r)
-
     return pd.DataFrame(all_rows)
 
 # =============================================================================
 #                                  MODULES
 # =============================================================================
 def render_throwins_module():
-    tab_superliga, tab_matches, tab_data, tab_compare = st.tabs(
-        ["Throw in overview", "Matches", "Throw in Data", "Comparison"]
-    )
+    tab_superliga, tab_compare, tab_data, tab_matches = st.tabs(
+    ["Throw in overview", "Comparison", "Throw in Data", "Matches"]
+)
 
     # ---- Superliga/FCK throw-ins (oversigt) ----
     with tab_superliga:
