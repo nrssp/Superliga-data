@@ -354,7 +354,7 @@ section[data-testid="stSidebar"] .stHeading,
 }}
 .filter-title {{
   font-weight:700; font-size:.9rem; margin-bottom:6px; 
-  color:{BRAND["primary"]};
+  color:{BRAND["text"]};
 }}
 
 /* ========== Top 3 cards ========== */
@@ -485,14 +485,6 @@ with header_cols[1]:
       <h1>{ACTIVE_TITLE}</h1>
     </div>
     """, unsafe_allow_html=True)
-
-# Genindlæs spillerfotos (rydder cache og scanner mapperne igen)
-if st.sidebar.button("🔄 Reload player photos"):
-    try:
-        st.cache_resource.clear()  # rydder logo/foto-indeks
-        st.cache_data.clear()
-    finally:
-        st.rerun()
 
 # =========================
 # Hjælpere (fælles)
@@ -977,7 +969,7 @@ def parse_throwin_delays_from_f24_cached(
 # =============================================================================
 def render_throwins_module():
     # NY: Tilføj “Spillerikoner”-fane
-    tab_superliga, tab_compare, tab_individuals, tab_icons, tab_data, tab_matches = st.tabs(
+    tab_superliga, tab_Comparison, tab_individuals, tab_icons, tab_data, tab_matches = st.tabs(
         ["Throw in overview", "Comparison", "Individuals", "Spillerikoner", "Throw in Data", "Matches"]
     )
 
@@ -995,6 +987,8 @@ def render_throwins_module():
 
         round_nums = [n for n in (_round_num(p) for p in round_dirs_all) if n is not None]
         min_r, max_r = min(round_nums), max(round_nums)
+
+
 
         # ---------- FILTERS ABOVE GRAPH ----------
         with filter_card("Rounds"):
@@ -1168,6 +1162,241 @@ def render_throwins_module():
             ]
             raw_cols = [c for c in season_df.columns if c in raw_cols]
             st.dataframe(season_df[raw_cols], hide_index=True)
+
+         # ---- Comparison ----
+    with tab_Comparison:
+        st.header("Comparison")
+
+        round_dirs_all = list_round_dirs(DATA_BASE)
+        if not round_dirs_all:
+            st.info("Ingen runder fundet.")
+            st.stop()
+
+        def _round_num2(p: Path):
+            m = re.search(r"R(\d+)$", p.name)
+            return int(m.group(1)) if m else None
+
+        round_nums2 = [n for n in (_round_num2(p) for p in round_dirs_all) if n is not None]
+        min_r2, max_r2 = min(round_nums2), max(round_nums2)
+
+        with filter_card("Rounds (comparison)"):
+            sel_min2, sel_max2 = st.slider("   ",
+                                           min_value=min_r2, max_value=max_r2,
+                                           value=(min_r2, max_r2), step=1, key="cmp_rounds")
+
+        c1, c2 = st.columns(2)
+        with c1:
+            with filter_card("Home/Away"):
+                side_filter2 = st.radio("    ", ["All", "Home", "Away"], horizontal=False, key="cmp_side")
+        with c2:
+            with filter_card("Third"):
+                third_filter2 = st.radio("     ", ["All", "First 1/3", "Second 1/3", "Last 1/3"],
+                                         horizontal=False, key="cmp_third")
+
+        selected_rounds2 = {r for r in range(sel_min2, sel_max2 + 1)}
+        round_dirs2 = [p for p in round_dirs_all if _round_num2(p) in selected_rounds2]
+
+        all_rows2 = []
+        for round_dir in round_dirs2:
+            rows = collect_round_data(round_dir)
+            if not rows:
+                continue
+            df_round = pd.DataFrame(rows)
+            for _, r in df_round.iterrows():
+                f24_path = round_dir / r["F24 file"]
+                f7_path  = (round_dir / r["F7 file"])  if r["F7 file"]  != "(mangler)" else None
+                f70_path = (round_dir / r["F70 file"]) if r["F70 file"] != "(mangler)" else None
+                df_throw = parse_throwin_delays_from_f24_cached(
+                    str(f24_path),
+                    str(f7_path) if f7_path else None,
+                    str(f70_path) if f70_path else None,
+                    SCHEMA_VER
+                )
+                if not df_throw.empty:
+                    df_throw["Round"] = round_dir.name
+                    df_throw["Match"] = r["Match"]
+                    all_rows2.append(df_throw)
+
+        if not all_rows2:
+            st.info("Ingen indkast i det valgte interval.")
+            st.stop()
+
+        season_cmp = pd.concat(all_rows2, ignore_index=True)
+
+        # Sikr kolonner
+        if "Thrown into the box" not in season_cmp.columns and "End in box" in season_cmp.columns:
+            season_cmp["Thrown into the box"] = season_cmp["End in box"]
+        for col, default in [
+            ("Thrown into the box", False), ("Ball retention", False),
+            ("Shot in 30s", False), ("Goal in 30s", False),
+            ("Shot xG (30s)", 0.0), ("Distance (m)", None)
+        ]:
+            if col not in season_cmp.columns:
+                season_cmp[col] = default
+
+        # Filtre
+        if side_filter2 != "All":
+            season_cmp = season_cmp[season_cmp["Side"] == side_filter2]
+        if third_filter2 != "All":
+            season_cmp = season_cmp[season_cmp["Third"] == third_filter2]
+
+        if season_cmp.empty:
+            st.info("Ingen data efter filtre.")
+            st.stop()
+
+        # Rens tal + outliers
+        season_cmp["Delay (s)"] = pd.to_numeric(season_cmp["Delay (s)"], errors="coerce")
+        season_cmp["Shot xG (30s)"] = pd.to_numeric(season_cmp["Shot xG (30s)"], errors="coerce")
+        season_cmp["is_outlier"] = _mark_outliers(season_cmp)
+        season_cmp_used = season_cmp[~season_cmp["is_outlier"]].copy()
+
+        # Aggreger pr. hold
+        gcmp = season_cmp_used.groupby("Team", dropna=False)
+        games_cmp = gcmp["Match"].nunique().rename("Games")
+        tot_throw_cmp = gcmp.size().rename("Total throw-ins")
+        avg_delay_cmp = gcmp["Delay (s)"].mean().rename("Avg. delay (s)")
+        lt7_cmp = gcmp.apply(lambda x: (pd.to_numeric(x["Delay (s)"], errors="coerce") < 7).sum()).rename("Throw-ins <7s")
+        total_delay_cmp = gcmp["Delay (s)"].sum().rename("Total delay (s)")
+
+        thrown_cnt_cmp = gcmp.apply(lambda x: x["Thrown into the box"].fillna(False).sum()).rename("Thrown into box")
+        thrown_pct_cmp = ((thrown_cnt_cmp / tot_throw_cmp) * 100).rename("% thrown into box")
+        thrown_per_game_cmp = (thrown_cnt_cmp / games_cmp).rename("Thrown into box per game")
+
+        retained_cnt_cmp = gcmp.apply(lambda x: x["Ball retention"].fillna(False).sum()).rename("Retained throw-ins")
+        pct_retained_cmp = ((retained_cnt_cmp / tot_throw_cmp) * 100).rename("Retention %")
+        retained_per_game_cmp = (retained_cnt_cmp / games_cmp).rename("Retained per game")
+
+        shot30_cnt_cmp = gcmp.apply(lambda x: x["Shot in 30s"].fillna(False).sum()).rename("TI shots ≤30s")
+        shot30_pct_cmp = ((shot30_cnt_cmp / tot_throw_cmp) * 100).rename("% TI shots ≤30s")
+        goal30_cnt_cmp = gcmp.apply(lambda x: x["Goal in 30s"].fillna(False).sum()).rename("TI goals ≤30s")
+        goal30_pct_cmp = ((goal30_cnt_cmp / tot_throw_cmp) * 100).rename("% TI goals ≤30s")
+        xg30_sum_cmp   = gcmp["Shot xG (30s)"].sum().rename("TI xG ≤30s")
+        xg30_per_ti_cmp = (xg30_sum_cmp / tot_throw_cmp).rename("xG per TI ≤30s")
+        xg30_per_game_cmp = (xg30_sum_cmp / games_cmp).rename("xG per game ≤30s")
+
+        overview_cmp = pd.concat(
+            [games_cmp, tot_throw_cmp, avg_delay_cmp, lt7_cmp, total_delay_cmp,
+             thrown_cnt_cmp, thrown_pct_cmp, thrown_per_game_cmp,
+             retained_cnt_cmp, pct_retained_cmp, retained_per_game_cmp,
+             shot30_cnt_cmp, shot30_pct_cmp, goal30_cnt_cmp, goal30_pct_cmp,
+             xg30_sum_cmp, xg30_per_ti_cmp, xg30_per_game_cmp],
+            axis=1
+        ).reset_index()
+
+        # Afledte kolonner
+        overview_cmp["Throw-ins per game"] = (overview_cmp["Total throw-ins"] / overview_cmp["Games"])
+        overview_cmp["Delay per throw-in (s)"] = (overview_cmp["Total delay (s)"] / overview_cmp["Total throw-ins"])
+
+        # Fjern dublette kolonner og tving til numerisk
+        overview_cmp = overview_cmp.loc[:, ~overview_cmp.columns.duplicated()].copy()
+        metric_options = [
+            "Avg. delay (s)",
+            "Delay per throw-in (s)",
+            "Throw-ins per game",
+            "Total throw-ins",
+            "Throw-ins <7s",
+            "Total delay (s)",
+            "Games",
+            "Thrown into box", "% thrown into box", "Thrown into box per game",
+            "Retained throw-ins", "Retention %", "Retained per game",
+            "TI shots ≤30s", "% TI shots ≤30s", "TI goals ≤30s", "% TI goals ≤30s",
+            "TI xG ≤30s", "xG per TI ≤30s", "xG per game ≤30s",
+        ]
+        for col in metric_options:
+            if col in overview_cmp.columns:
+                overview_cmp[col] = pd.to_numeric(overview_cmp[col], errors="coerce")
+
+        overview_cmp["is_FCK"] = overview_cmp["Team"].apply(lambda t: t in TEAM_ALIASES)
+
+        # ==== GitHub RAW logos via Altair mark_image ====
+        import altair as alt
+        from urllib.parse import quote
+
+        # Base to your GitHub repo (raw)
+        GH_RAW_BASE = "https://raw.githubusercontent.com/nrssp/Superliga-data/main/Logos"
+
+        # Alias (hvis Opta-navn != filnavn)
+        TEAM_LOGO_ALIAS = {
+            "FC Copenhagen": "FC København",
+            "F.C. København": "FC København",
+            "København": "FC København",
+            "Brondby": "Brøndby IF",
+            "Nordsjaelland": "FC Nordsjælland",
+            "OB": "Odense Boldklub",
+            "Sonderjyske": "SønderjyskE",
+            "Lyngby": "Lyngby BK",
+            "Randers": "Randers FC",
+            "Vejle": "Vejle BK",
+            "Viborg": "Viborg FF",
+            "AGF": "AGF Aarhus",
+            # tilføj flere hvis du støder på afvigelser
+        }
+
+        def to_logo_name(team: str) -> str:
+            # Brug alias hvis vi har et; ellers team-strengen som er
+            return TEAM_LOGO_ALIAS.get(team, team)
+
+        def gh_logo_url(team: str) -> str | None:
+            """
+            Bygger en URL til GitHub raw:
+              https://raw.githubusercontent.com/nrssp/Superliga-data/main/Logos/<filnavn>.png
+            Husk at URL-encode (mellemrum, æ/ø/å osv.).
+            """
+            if not isinstance(team, str) or not team:
+                return None
+            fname = f"{to_logo_name(team)}.png"
+            return f"{GH_RAW_BASE}/{quote(fname, safe='')}"
+
+        # ---- Select axes ----
+        d1, d2 = st.columns(2)
+        with d1:
+            with filter_card("X-axis"):
+                x_metric = st.selectbox("        ", metric_options, index=0, key="cmp_x")
+        with d2:
+            with filter_card("Y-axis"):
+                y_metric = st.selectbox("         ", metric_options, index=2, key="cmp_y")
+
+        # Byg plot-datasæt
+        plot_df = overview_cmp.loc[:, ~overview_cmp.columns.duplicated()].copy()
+        plot_df = plot_df[plot_df["Games"] > 0]
+        plot_df["x"] = pd.to_numeric(plot_df[x_metric], errors="coerce")
+        plot_df["y"] = pd.to_numeric(plot_df[y_metric], errors="coerce")
+        plot_df["logo_url"] = plot_df["Team"].map(gh_logo_url)
+        plot_df = plot_df.dropna(subset=["x", "y", "logo_url"])
+
+        if plot_df.empty:
+            st.info("Ingen gyldige datapunkter for de valgte akser/filtre.")
+            st.stop()
+
+        # Median-linjer
+        avg_x = float(plot_df["x"].mean())
+        avg_y = float(plot_df["y"].mean())
+        rule_x = alt.Chart(pd.DataFrame({"x": [avg_x]})).mark_rule(strokeDash=[4,2], color="#888").encode(x="x:Q")
+        rule_y = alt.Chart(pd.DataFrame({"y": [avg_y]})).mark_rule(strokeDash=[4,2], color="#888").encode(y="y:Q")
+
+        # Logoer som punkter
+        chart = (
+            alt.Chart(plot_df, height=520, width="container")
+              .mark_image(width=20, height=20)
+              .encode(
+                  x=alt.X("x:Q", title=x_metric),
+                  y=alt.Y("y:Q", title=y_metric),
+                  url="logo_url:N",
+                  tooltip=["Team", x_metric, y_metric, "Total throw-ins", "Games"],
+              )
+        )
+
+        st.altair_chart(chart + rule_x + rule_y, use_container_width=True)
+
+        # Lille tabel under grafen
+        _show_cols = ["Team", x_metric, y_metric, "Total throw-ins", "Games"]
+        _show_cols = [c for c in _show_cols if c in plot_df.columns]
+        st.dataframe(
+            plot_df[_show_cols].sort_values(by=[x_metric, y_metric], ascending=False).head(30),
+            hide_index=True
+        )
+
+
 
     # ---- Individuals (spillere) ----
 
@@ -1728,6 +1957,9 @@ def render_throwins_module():
                         ]
                         show_cols = [c for c in display_cols if c in df_table.columns]
                         st.dataframe(df_table[show_cols], hide_index=True, height=380)
+
+
+
 # =========================
 # Router
 # =========================
