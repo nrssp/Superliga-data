@@ -271,37 +271,93 @@ def fetch_logo_bytes(url: str) -> bytes | None:
 # =========================
 st.markdown(f"""
 <style>
-.stApp {{ background: linear-gradient(180deg, {BRAND["bg"]} 0%, #FFFFFF 100%); color: {BRAND["text"]}; }}
-.fck-header {{ display:flex; align-items:center; gap:12px; padding:10px 14px; margin-bottom:8px;
-  border-radius:14px; background: {BRAND["white"]}; border:1px solid {BRAND["grey"]}33; box-shadow: 0 4px 14px rgba(0,0,0,0.04); }}
-.fck-header h1 {{ font-size: 1.25rem; line-height:1.2; margin:0; }}
-.fck-kicker {{ color:{BRAND["muted"]}; font-weight:600; letter-spacing:.02em; text-transform:uppercase; font-size:.8rem; }}
-section[data-testid="stSidebar"] .stHeading, .stSidebar h2, .stSidebar h3 {{ color:{BRAND["primary"]}; }}
-[data-baseweb="button-group"] button, .stRadio [role="radiogroup"] > label {{ border-radius:999px!important; }}
-.stRadio label span {{ padding:2px 8px!important; line-height:1.25!important; border-radius:999px!important; border:1px solid {BRAND["grey"]}33; font-size:.88rem; }}
-.stRadio label div[role="radio"][aria-checked="true"]+span {{ background:{BRAND["primary"]}; color:#fff; border-color:{BRAND["primary"]}; }}
-[data-testid="stDataFrame"] thead th {{ background:{BRAND["primary"]}!important; color:#fff!important; }}
-.stButton>button {{ border-radius:12px; border:1px solid {BRAND["primary"]}; background:{BRAND["primary"]}; color:#fff; }}
-.stButton>button:hover {{ filter:brightness(.95); }}
-.badge {{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:.75rem; font-weight:600;
-  border:1px solid {BRAND["grey"]}; color:{BRAND["muted"]}; }}
-[data-testid="stExpander"] {{ background:rgba(0,0,0,0.06); border-radius:12px!important; margin-bottom:10px; }}
-[data-testid="stExpander"]>details>summary {{ background:transparent!important; padding:8px 12px!important; border-bottom:none!important; outline:none!important; }}
-[data-testid="stExpander"] summary svg, [data-testid="stExpander"] summary::-webkit-details-marker {{ display:none!important; }}
-[data-testid="stExpander"] .st-expanderHeader p {{ margin:0; font-weight:800; text-decoration:underline; color:{BRAND["text"]}; }}
-[data-testid="stExpander"] .st-expanderContent {{ padding:8px 12px 12px!important; overflow:visible!important; }}
-[data-testid="stHorizontalBlock"] {{ display:flex!important; align-items:stretch!important; }}
-[data-testid="stHorizontalBlock"] [data-testid="column"],
-[data-testid="stHorizontalBlock"] [data-testid="column"]>div,
-[data-testid="stVerticalBlock"],
-[data-testid="stExpander"],
-[data-testid="stExpander"]>details {{ display:flex!important; flex-direction:column!important; flex:1 1 0!important;
-  min-height:180px!important; height:auto!important; }}
-[data-testid="stExpander"] .st-expanderContent {{ flex:1 1 auto!important; }}
-@media (max-width:1100px){{
-  [data-testid="stHorizontalBlock"] [data-testid="column"] [data-testid="stExpander"] {{ height:auto!important; min-height:unset!important; }}
+/* ========== App base / brand ========== */
+.stApp {{ 
+  background: linear-gradient(180deg, {BRAND["bg"]} 0%, #FFFFFF 100%); 
+  color: {BRAND["text"]}; 
 }}
-/* Top 3 cards */
+/* Head / header bar */
+.fck-header {{ 
+  display:flex; align-items:center; gap:12px; 
+  padding:10px 14px; margin-bottom:8px;
+  border-radius:14px; background:{BRAND["white"]}; 
+  border:1px solid {BRAND["grey"]}33; 
+  box-shadow:0 4px 14px rgba(0,0,0,0.04); 
+}}
+.fck-header h1 {{ font-size:1.25rem; line-height:1.2; margin:0; }}
+.fck-kicker {{ 
+  color:{BRAND["muted"]}; font-weight:600; letter-spacing:.02em; 
+  text-transform:uppercase; font-size:.8rem; 
+}}
+
+/* ========== Sidebar ========== */
+section[data-testid="stSidebar"] .stHeading, 
+.stSidebar h2, .stSidebar h3 {{ color:{BRAND["primary"]}; }}
+
+/* ========== Form controls / radios ========== */
+[data-baseweb="button-group"] button, 
+.stRadio [role="radiogroup"] > label {{ border-radius:999px!important; }}
+.stRadio label span {{ 
+  padding:2px 8px!important; line-height:1.25!important; 
+  border-radius:999px!important; border:1px solid {BRAND["grey"]}33; 
+  font-size:.88rem; 
+}}
+.stRadio label div[role="radio"][aria-checked="true"]+span {{ 
+  background:{BRAND["primary"]}; color:#fff; border-color:{BRAND["primary"]}; 
+}}
+
+.stButton>button {{ 
+  border-radius:12px; border:1px solid {BRAND["primary"]}; 
+  background:{BRAND["primary"]}; color:#fff; 
+}}
+.stButton>button:hover {{ filter:brightness(.95); }}
+
+/* Badges */
+.badge {{ 
+  display:inline-block; padding:2px 8px; border-radius:999px; 
+  font-size:.75rem; font-weight:600;
+  border:1px solid {BRAND["grey"]}; color:{BRAND["muted"]}; 
+}}
+
+/* ========== DataFrame / tables ========== */
+[data-testid="stDataFrame"] thead th {{ 
+  background:{BRAND["primary"]}!important; color:#fff!important; 
+}}
+[data-testid="stDataFrame"] tbody td {{ font-size:.92rem; }}
+
+/* ========== Layout / equal heights ========== */
+/* Gør kolonner og deres børn til flex, så kort strækker sig */
+[data-testid="stHorizontalBlock"],
+[data-testid="stVerticalBlock"] {{ 
+  display:flex!important; align-items:stretch!important; 
+}}
+[data-testid="stHorizontalBlock"] [data-testid="column"],
+[data-testid="stHorizontalBlock"] [data-testid="column"]>div {{ 
+  display:flex!important; flex-direction:column!important; 
+  align-items:stretch!important; 
+}}
+/* Standard kort-min-højde for ens højde */
+.equal-height {{ 
+  display:flex; flex-direction:column; 
+  min-height:180px; height:auto; 
+}}
+@media (max-width:1100px) {{
+  .equal-height {{ min-height:unset; }}
+}}
+
+/* ========== Filter cards (ikke-collapsible) ========== */
+.filter-card {{
+  padding:8px 12px; margin-bottom:10px; 
+  border-radius:12px; background:#fff;
+  border:1px solid {BRAND["primary"]}33; 
+  box-shadow:0 2px 6px rgba(0,0,0,0.04);
+}}
+.filter-title {{
+  font-weight:700; font-size:.9rem; margin-bottom:6px; 
+  color:{BRAND["primary"]};
+}}
+
+/* ========== Top 3 cards ========== */
 .top3-wrap {{ display:flex; gap:12px; margin:6px 0 14px; }}
 .top3-card {{
   flex:1 1 0; display:flex; align-items:center; gap:10px;
@@ -310,9 +366,7 @@ section[data-testid="stSidebar"] .stHeading, .stSidebar h2, .stSidebar h3 {{ col
   box-shadow:0 4px 14px rgba(0,0,0,.04);
   min-height:160px;
 }}
-.top3-rank {{
-  font-weight:900; font-size:1.15rem; color:{BRAND["primary"]}; width:32px; text-align:center;
-}}
+.top3-rank {{ font-weight:900; font-size:1.15rem; color:{BRAND["primary"]}; width:32px; text-align:center; }}
 .top3-img > img {{
   width:80px; height:120px; border-radius:12px; object-fit:cover; background:#fff;
   border:1px solid {BRAND["grey"]}33;
@@ -321,34 +375,69 @@ section[data-testid="stSidebar"] .stHeading, .stSidebar h2, .stSidebar h3 {{ col
 .top3-name {{ font-weight:800; }}
 .top3-team {{ font-size:.9rem; opacity:.8; }}
 .top3-value {{ margin-left:auto; font-weight:800; }}
-@media (max-width:1000px){{
+@media (max-width:1000px) {{
   .top3-wrap {{ flex-direction:column; }}
 }}
-/* Spillerikoner grid/cards */
-.player-grid {{ display:grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap:14px; }}
+
+/* ========== Spillerikoner grid/cards ========== */
+.player-grid {{ 
+  display:grid; grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); 
+  gap:14px; 
+}}
 .player-card {{
   display:flex; flex-direction:column; align-items:center; gap:8px;
   padding:12px; border-radius:14px; background:#fff;
-  border:1px solid #001E9633; box-shadow:0 4px 14px rgba(0,0,0,0.04);
+  border:1px solid {BRAND["primary"]}33; 
+  box-shadow:0 4px 14px rgba(0,0,0,0.04);
 }}
-.player-img {{ width:92px; height:92px; border-radius:16px; object-fit:cover; background:#fff; border:1px solid #e6e8ef; }}
+.player-img {{ 
+  width:92px; height:92px; border-radius:16px; object-fit:cover; 
+  background:#fff; border:1px solid #e6e8ef; 
+}}
 .player-initials {{
-  width:92px; height:92px; border-radius:16px; display:flex; align-items:center; justify-content:center;
-  font-weight:900; font-size:28px; color:#001E96; background:#EEF2FF; border:1px solid #e6e8ef;
+  width:92px; height:92px; border-radius:16px; display:flex; 
+  align-items:center; justify-content:center;
+  font-weight:900; font-size:28px; color:{BRAND["primary"]}; 
+  background:#EEF2FF; border:1px solid #e6e8ef;
 }}
 .player-name {{ font-weight:800; text-align:center; line-height:1.1; }}
 .player-team {{ font-size:.85rem; opacity:.75; text-align:center; }}
 .player-meta {{ font-size:.8rem; opacity:.85; }}
+
+/* ========== Tuning af expanders (hvis de forekommer andre steder) ========== */
+[data-testid="stExpander"] {{ 
+  background:rgba(0,0,0,0.06); border-radius:12px!important; margin-bottom:10px; 
+}}
+[data-testid="stExpander"]>details>summary {{ 
+  background:transparent!important; padding:8px 12px!important; 
+  border-bottom:none!important; outline:none!important; 
+}}
+[data-testid="stExpander"] summary svg, 
+[data-testid="stExpander"] summary::-webkit-details-marker {{ display:none!important; }}
+[data-testid="stExpander"] .st-expanderHeader p {{ 
+  margin:0; font-weight:800; text-decoration:underline; color:{BRAND["text"]}; 
+}}
+[data-testid="stExpander"] .st-expanderContent {{ 
+  padding:8px 12px 12px!important; overflow:visible!important; 
+}}
 </style>
 """, unsafe_allow_html=True)
 
-# “Filter card” helper
+
+
+# “Filter card” helper (ikke-collapsible, men med kort-baggrund)
 @contextmanager
 def filter_card(title: str):
-    # Brug container i stedet for expander
-    with st.container():
-        st.markdown(f"**{title}**")   # overskrift i stedet for expander-title
-        yield
+    st.markdown(
+        f"""
+        <div class="filter-card">
+          <div class="filter-title">{title}</div>
+        """,
+        unsafe_allow_html=True
+    )
+    yield
+    st.markdown("</div>", unsafe_allow_html=True)
+
 
 # =========================
 # Sidebar: Indstillinger
