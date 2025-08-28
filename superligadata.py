@@ -345,7 +345,9 @@ section[data-testid="stSidebar"] .stHeading, .stSidebar h2, .stSidebar h3 {{ col
 # “Filter card” helper
 @contextmanager
 def filter_card(title: str):
-    with st.expander(f"{title}", expanded=True):
+    # Brug container i stedet for expander
+    with st.container():
+        st.markdown(f"**{title}**")   # overskrift i stedet for expander-title
         yield
 
 # =========================
