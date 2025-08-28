@@ -21,6 +21,13 @@ LOCAL_CACHE = Path("./data").resolve()
 LOGO_DROPBOX_FOLDER = "https://www.dropbox.com/scl/fo/s869q2kb2jwn3zvsgts88/ACMNFC5T62ltbtIKbk4zsFg?dl=1"
 LOGO_CACHE = (LOCAL_CACHE / "logos").resolve()
 
+def _download_dropbox_folder_zip(folder_url: str, out_dir: Path) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    r = requests.get(folder_url, timeout=120)
+    r.raise_for_status()
+    with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
+        zf.extractall(out_dir)
+
 @st.cache_resource(show_spinner=False)
 def _ensure_logos_synced(folder_url: str = LOGO_DROPBOX_FOLDER, out_dir: Path = LOGO_CACHE) -> Path | None:
     try:
@@ -30,37 +37,12 @@ def _ensure_logos_synced(folder_url: str = LOGO_DROPBOX_FOLDER, out_dir: Path = 
     except Exception:
         return None
 
-@st.cache_resource(show_spinner=False)
-def _build_logo_dataurl_map(logo_dir: Path) -> dict[str, str]:
-    """
-    Byg et map over logoer med flere 'nøgler' pr. fil for robust opslag:
-    - original stem
-    - normaliseret stem
-    - slug (baseret på _team_to_slug)
-    """
-    m = {}
-    if not logo_dir or not logo_dir.exists():
-        return m
-    for p in logo_dir.rglob("*.png"):
-        try:
-            b64 = base64.b64encode(p.read_bytes()).decode("ascii")
-            dataurl = f"data:image/png;base64,{b64}"
-            stem = p.stem
-            m[stem] = dataurl
-            m[_norm(stem)] = dataurl
-            slug = _team_to_slug(stem)
-            if slug:
-                m[slug] = dataurl
-        except Exception:
-            pass
-    return m
-
-def _download_dropbox_folder_zip(folder_url: str, out_dir: Path) -> None:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    r = requests.get(folder_url, timeout=120)
-    r.raise_for_status()
-    with zipfile.ZipFile(io.BytesIO(r.content)) as zf:
-        zf.extractall(out_dir)
+# Bootstrap cache once if empty
+if not LOCAL_CACHE.exists() or not any(LOCAL_CACHE.iterdir()):
+    try:
+        _download_dropbox_folder_zip(REMOTE_DROPBOX_FOLDER, LOCAL_CACHE)
+    except Exception:
+        pass
 
 def _find_rounds_base(root: Path) -> Path | None:
     try:
@@ -76,16 +58,7 @@ def _find_rounds_base(root: Path) -> Path | None:
         pass
     return None
 
-# Bootstrap cache once if empty
-if not LOCAL_CACHE.exists() or not any(LOCAL_CACHE.iterdir()):
-    try:
-        _download_dropbox_folder_zip(REMOTE_DROPBOX_FOLDER, LOCAL_CACHE)
-    except Exception:
-        pass
-
 DEFAULT_BASE_FROM_CACHE = _find_rounds_base(LOCAL_CACHE)
-# -----------------------------------------------------------------------------
-
 
 # =========================
 # Brand & tema (F.C. København)
@@ -109,8 +82,45 @@ LOGO_URL = LOGO_URL.replace("www.dropbox.com", "dl.dropboxusercontent.com").repl
 APP_TITLE = "F.C. Copenhagen analytics"
 PAGE_ICON = LOGO_URL
 
-# === Player photos (lokale filer) ============================================
-PLAYER_PHOTO_ROOT = Path("/Users/nicklaspedersen/Desktop/Player photos").expanduser()
+# Skal være første Streamlit-kald i appen
+st.set_page_config(page_title=APP_TITLE, page_icon=PAGE_ICON, layout="wide")
+
+# === Player photos (Dropbox sync) ============================================
+PLAYER_PHOTO_URLS = "https://www.dropbox.com/scl/fo/suiphvo7fv8ibegjomubm/AOakYVyH_ri3WF3OD0A9UJo?rlkey=xeulwe99avd9m1vzip0jw9r0z&st=4zkyp7so&dl=1"
+
+PLAYER_PHOTO_CACHE = (LOCAL_CACHE / "player_photos").resolve()
+PLAYER_PHOTO_ROOT: Path | None = None  # lazy init
+
+
+@st.cache_resource(show_spinner=False)
+def _ensure_player_photos_synced(urls_csv: str, out_dir: Path = PLAYER_PHOTO_CACHE) -> Path | None:
+    """Downloader hver Dropbox-mappe (via delbart link) som zip og pakker ud i out_dir."""
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        if any(out_dir.rglob("*.*")):
+            return out_dir
+        urls = [u.strip().replace("dl=0", "dl=1") for u in urls_csv.split(",") if u.strip()]
+        if not urls:
+            return None
+        for u in urls:
+            _download_dropbox_folder_zip(u, out_dir)
+        return out_dir
+    except zipfile.BadZipFile:
+        st.warning("Spillerfoto-zip var korrupt. Tjek at linket er et delbart mappe-link med dl=1.")
+        return None
+    except Exception:
+        return None
+
+def _get_player_photo_root() -> Path | None:
+    global PLAYER_PHOTO_ROOT
+    if PLAYER_PHOTO_ROOT is not None:
+        return PLAYER_PHOTO_ROOT
+    root = _ensure_player_photos_synced(PLAYER_PHOTO_URLS)
+    if root is None:
+        env_fallback = os.getenv("PLAYER_PHOTO_ROOT", "")
+        root = Path(env_fallback).expanduser() if env_fallback else None
+    PLAYER_PHOTO_ROOT = root
+    return PLAYER_PHOTO_ROOT
 
 # map team-navne -> mappenavne (slugs) i "Player photos"
 _TEAM_TO_SLUG = {
@@ -132,7 +142,6 @@ _TEAM_TO_SLUG = {
 def _norm(s: str) -> str:
     if not isinstance(s, str):
         return ""
-    # dansk specialtegn → ascii-ish
     s = (s.replace("Æ", "Ae").replace("Ø", "O").replace("Å", "Aa")
            .replace("æ", "ae").replace("ø", "o").replace("å", "aa"))
     s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
@@ -145,22 +154,24 @@ def _team_to_slug(team: str) -> str | None:
     return _TEAM_TO_SLUG.get(key, key.replace(" ", "-") if key else None)
 
 @st.cache_resource(show_spinner=False)
-def build_player_photo_index(root: Path = PLAYER_PHOTO_ROOT) -> dict[tuple[str, str], str]:
+def build_player_photo_index(root: Path | None = None) -> dict[tuple[str, str], str]:
     """
     Returnerer {(team_slug, norm_player_name): dataurl}.
-    Læser alle .png/.jpg/.jpeg/.webp i hver klub-mappe.
+    Læser .png/.jpg/.jpeg/.webp i hver klub-mappe under PLAYER_PHOTO_ROOT.
     """
+    if root is None:
+        root = _get_player_photo_root()  # trigger sync
     idx: dict[tuple[str, str], str] = {}
-    if not root.exists():
+    if not root or not Path(root).exists():
         return idx
-    for team_dir in root.iterdir():
+    for team_dir in Path(root).iterdir():
         if not team_dir.is_dir():
             continue
         team_slug = team_dir.name
         for p in team_dir.rglob("*"):
             if p.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
                 continue
-            norm_name = _norm(p.stem)  # "Fornavn Efternavn"
+            norm_name = _norm(p.stem)
             try:
                 b = p.read_bytes()
                 if p.suffix.lower() == ".png":
@@ -182,19 +193,36 @@ def get_player_photo_dataurl(team: str, player: str, index: dict[tuple[str,str],
     key = (slug, _norm(player))
     if key in index:
         return index[key]
-    # fallback: samme navn i en anden klub (mindst sandsynligt, men bedre end ingenting)
-    norm_p = _norm(player)
+    norm_p = _norm(player)  # fallback: navnematch på tværs af klubber
     for (sl, np), val in index.items():
         if np == norm_p:
             return val
     return None
 
-# --- NYT: robust logo-opslag -------------------------------------------------
+@st.cache_resource(show_spinner=False)
+def _build_logo_dataurl_map(logo_dir: Path) -> dict[str, str]:
+    """Byg map over logoer (robust: original, normaliseret, slug)."""
+    m = {}
+    if not logo_dir or not logo_dir.exists():
+        return m
+    for p in logo_dir.rglob("*.png"):
+        try:
+            b64 = base64.b64encode(p.read_bytes()).decode("ascii")
+            dataurl = f"data:image/png;base64,{b64}"
+            stem = p.stem
+            m[stem] = dataurl
+            m[_norm(stem)] = dataurl
+            slug = _team_to_slug(stem)
+            if slug:
+                m[slug] = dataurl
+        except Exception:
+            pass
+    return m
+
 def _logo_lookup(logo_map: dict[str,str], team: str) -> str | None:
     """Find logo-dataurl robust: eksakt, normaliseret, eller slug-match."""
     if not logo_map or not team:
         return None
-    # direkte
     if team in logo_map:
         return logo_map[team]
     team_norm = _norm(team)
@@ -210,14 +238,11 @@ def _logo_lookup(logo_map: dict[str,str], team: str) -> str | None:
         if slug_k == team_slug:
             best = best or v
     return best
-# ============================================================================
 
 TEAM_ALIASES = {
     "FC København", "F.C. København", "FC Copenhagen", "F.C. Copenhagen",
     "København", "Copenhagen"
 }
-
-st.set_page_config(page_title=APP_TITLE, page_icon=PAGE_ICON, layout="wide")
 
 # === Module switcher ===
 with st.sidebar:
@@ -240,7 +265,6 @@ def fetch_logo_bytes(url: str) -> bytes | None:
     except Exception:
         return None
 # -----------------------------------------------------------------------------
-
 
 # =========================
 # Global CSS (kort + ens højde)
@@ -318,13 +342,11 @@ section[data-testid="stSidebar"] .stHeading, .stSidebar h2, .stSidebar h3 {{ col
 </style>
 """, unsafe_allow_html=True)
 
-
 # “Filter card” helper
 @contextmanager
 def filter_card(title: str):
     with st.expander(f"{title}", expanded=True):
         yield
-
 
 # =========================
 # Sidebar: Indstillinger
@@ -337,6 +359,15 @@ if st.sidebar.button("🔄 Sync data from Dropbox"):
         st.rerun()
     except Exception as e:
         st.error(f"Sync fejlede: {e}")
+
+if st.sidebar.button("🔄 Sync player photos"):
+    try:
+        st.cache_resource.clear()  # ryd cache så vi henter igen
+        _ensure_player_photos_synced(PLAYER_PHOTO_URLS)
+        st.success("Spillerfotos synkroniseret.")
+        st.rerun()
+    except Exception as e:
+        st.error(f"Sync af spillerfotos fejlede: {e}")
 
 DATA_BASE = os.getenv("FCK_DATA_BASE") or (str(DEFAULT_BASE_FROM_CACHE) if DEFAULT_BASE_FROM_CACHE else "/Volumes/10eren-Analyse/[8] Data/Superliga Data 25/26")
 _base = Path(DATA_BASE).expanduser()
@@ -367,9 +398,7 @@ with header_cols[1]:
 # Genindlæs spillerfotos (rydder cache og scanner mapperne igen)
 if st.sidebar.button("🔄 Reload player photos"):
     try:
-        # Rydder ALLE cache_resource (inkl. logo-cache og fotoindeks)
-        st.cache_resource.clear()
-        # (valgfrit) ryd også cache_data, hvis du vil være helt sikker
+        st.cache_resource.clear()  # rydder logo/foto-indeks
         st.cache_data.clear()
     finally:
         st.rerun()
@@ -499,28 +528,30 @@ def build_team_maps_from_f7(f7_path: Path):
         pass
     return name_map, side_map
 
-def build_player_map_from_f7(f7_path: Path):
-    """player_id -> display name. Gem både 'p12345' og '12345' som nøgler."""
-    pmap: dict[str, str] = {}
+def build_player_map_from_f7(f7_path: Path) -> dict[str, str]:
+    """
+    Map: player_id (uID; også uden 'p' prefix) -> spillerens navn.
+    """
+    out = {}
     try:
         root = ET.parse(str(f7_path)).getroot()
-        for p in root.findall(".//Team/Player"):
-            pid = (p.attrib.get("uID") or p.attrib.get("uid") or "").strip()
-            person = p.find("PersonName")
-            first = (person.findtext("First") or "").strip() if person is not None else ""
-            known = (person.findtext("Known") or "").strip() if person is not None else ""
-            last  = (person.findtext("Last")  or person.findtext("FamilyName") or "").strip() if person is not None else ""
-            name = known if known else (" ".join(x for x in [first, last] if x).strip() or first or last or "")
-            if not pid or not name:
-                continue
-            pmap[pid] = name
-            if pid.startswith("p") and pid[1:].isdigit():
-                pmap[pid[1:]] = name
-            elif pid.isdigit():
-                pmap["p" + pid] = name
+        for team in root.findall(".//Team"):
+            for p in team.findall("Player"):
+                pid = (p.attrib.get("uID") or p.attrib.get("uid") or "").strip()
+                person = p.find("PersonName")
+                first = (person.findtext("First") or "").strip() if person is not None else ""
+                known = (person.findtext("Known") or "").strip() if person is not None else ""
+                last  = (person.findtext("Last")  or person.findtext("FamilyName") or "").strip() if person is not None else ""
+                name = known if known else (" ".join(x for x in [first, last] if x).strip() or first or last or "")
+                if not name:
+                    name = "Unknown"
+                if pid:
+                    out[pid] = name
+                    if len(pid) > 1 and pid[1:].isdigit():
+                        out[pid[1:]] = name
     except Exception:
         pass
-    return pmap
+    return out
 
 def build_xg_map_from_f70(f70_path: Path):
     """Opta F70 xG (qualifier_id=321) -> event_id -> xG."""
@@ -1048,6 +1079,7 @@ def render_throwins_module():
             st.dataframe(season_df[raw_cols], hide_index=True)
 
     # ---- Individuals (spillere) ----
+
     with tab_individuals:
         st.header("Player throw-in information")
 
