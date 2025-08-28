@@ -1365,6 +1365,13 @@ def render_throwins_module():
                 team   = row.get("Team", "—")
                 value  = _fmt_value(row.get(metric_ind))
 
+                st.markdown("""
+<style>
+.top3-card { margin-bottom: 0; }
+</style>
+""", unsafe_allow_html=True)
+
+
                 # → først prøv spillerfoto, ellers klublogo (robust lookup)
                 img = get_player_photo_dataurl(team, player, _photo_index) or _logo_lookup(_logo_map, team)
 
@@ -1383,6 +1390,7 @@ def render_throwins_module():
                         """,
                         unsafe_allow_html=True
                     )
+                    
         # ---------------------------------------------------------------------------    
 
         # Bar-chart (bevarer din eksisterende logik)
