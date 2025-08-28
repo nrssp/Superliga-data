@@ -1387,17 +1387,7 @@ def render_throwins_module():
         )
 
         st.altair_chart(chart + rule_x + rule_y, use_container_width=True)
-
-        # Lille tabel under grafen
-        _show_cols = ["Team", x_metric, y_metric, "Total throw-ins", "Games"]
-        _show_cols = [c for c in _show_cols if c in plot_df.columns]
-        st.dataframe(
-            plot_df[_show_cols].sort_values(by=[x_metric, y_metric], ascending=False).head(30),
-            hide_index=True
-        )
-
-
-
+        
     # ---- Individuals (spillere) ----
 
     with tab_individuals:
