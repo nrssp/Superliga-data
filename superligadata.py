@@ -3486,6 +3486,91 @@ def render_xg_module():
 
 
 
+
+def render_shots_module():
+    st.header("Shots — xG & Play Phase (Rounds 1–11)")
+
+    # Base dir with fallbacks
+    try:
+        default_base = DATA_BASE
+    except NameError:
+        import os
+        default_base = os.environ.get("FCK_DATA_BASE", "./data")
+    base_dir = st.text_input("Data folder (indeholder R1..R11)", value=str(default_base))
+    round_min = st.number_input("Fra runde", min_value=1, max_value=33, value=1, step=1)
+    round_max = st.number_input("Til runde", min_value=round_min, max_value=33, value=max(11, round_min), step=1)
+
+    with st.spinner("Sammenstiller afslutninger..."):
+        df = collect_shots_all_rounds(base_dir, int(round_min), int(round_max))
+
+    if df.empty:
+        st.info("Ingen afslutninger med xG fundet i det valgte interval.")
+        return
+
+    # Filters
+    c1, c2 = st.columns(2)
+    with c1:
+        teams = sorted([t for t in df["Team"].dropna().unique()])
+        sel_teams = st.multiselect("Team", teams, default=teams)
+    with c2:
+        phases = ["Regular play","Fast break","Set piece","Corner","Freekick","Corner situation","Direct freekick","Throw in","Individual play","Penalty"]
+        sel_phases = st.multiselect("Phase", phases, default=phases)
+
+    df_f = df[df["Team"].isin(sel_teams) & df["Phase"].isin(sel_phases)].copy()
+    if df_f.empty:
+        st.info("Ingen data efter filtrering.")
+        return
+
+    # KPIs
+    k1, k2, k3 = st.columns(3)
+    with k1: st.metric("Kampe", df_f["Match"].nunique())
+    with k2: st.metric("Afslutninger (xG events)", len(df_f))
+    with k3: st.metric("Total xG", round(float(df_f["xG"].sum()), 2))
+
+    # NEW: Phase summary (league-wide over selection)
+    st.subheader("Phase summary (xG & shots)")
+    g_phase = (df_f.groupby("Phase", dropna=False)
+                  .agg(Shots=("event_id","count"), xG=("xG","sum"))
+                  .reset_index()
+                  .sort_values("xG", ascending=False))
+    g_phase["xG"] = g_phase["xG"].astype(float).round(3)
+    g_phase["Avg xG/shot"] = (g_phase["xG"] / g_phase["Shots"]).round(3)
+    total_xg = g_phase["xG"].sum()
+    if total_xg and total_xg != 0:
+        g_phase["Share xG"] = (g_phase["xG"] / total_xg * 100.0).round(1).astype(str) + "%"
+    else:
+        g_phase["Share xG"] = "0.0%"
+    st.dataframe(g_phase, hide_index=True, use_container_width=True)
+
+    # xG per phase per team (stacked bar)
+    g = df_f.groupby(["Team","Phase"], dropna=False)["xG"].sum().reset_index()
+    chart = (
+        alt.Chart(g)
+           .mark_bar()
+           .encode(
+               x=alt.X("sum(xG):Q", title="xG"),
+               y=alt.Y("Team:N", sort="-x"),
+               color=alt.Color("Phase:N"),
+               tooltip=["Team","Phase","xG"]
+           )
+           .properties(height=max(320, 26*len(g["Team"].unique())))
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+    # Top players by xG
+    st.subheader("Top players by xG")
+    top_players = (df_f.groupby(["Player","Team"], dropna=False)["xG"]
+                     .sum().reset_index()
+                     .sort_values("xG", ascending=False).head(25))
+    st.dataframe(top_players, hide_index=True, use_container_width=True)
+
+    # Raw table
+    with st.expander("Alle afslutninger (raw)"):
+        show_cols = ["Round","Match","Team","Player","min","sec","xG","Phase","event_id"]
+        st.dataframe(df_f[show_cols].sort_values(["Round","Match","min","sec"]), hide_index=True, use_container_width=True)
+
+
+
 # =========================
 # Router
 # =========================
@@ -3703,84 +3788,3 @@ def collect_shots_all_rounds(base_dir: str, round_min: int, round_max: int):
     return pd.concat(all_rows, ignore_index=True) if all_rows else pd.DataFrame()
 
 # === SHOTS: Streamlit view ===
-def render_shots_module():
-    st.header("Shots — xG & Play Phase (Rounds 1–11)")
-
-    # Base dir with fallbacks
-    try:
-        default_base = DATA_BASE
-    except NameError:
-        import os
-        default_base = os.environ.get("FCK_DATA_BASE", "./data")
-    base_dir = st.text_input("Data folder (indeholder R1..R11)", value=str(default_base))
-    round_min = st.number_input("Fra runde", min_value=1, max_value=33, value=1, step=1)
-    round_max = st.number_input("Til runde", min_value=round_min, max_value=33, value=max(11, round_min), step=1)
-
-    with st.spinner("Sammenstiller afslutninger..."):
-        df = collect_shots_all_rounds(base_dir, int(round_min), int(round_max))
-
-    if df.empty:
-        st.info("Ingen afslutninger med xG fundet i det valgte interval.")
-        return
-
-    # Filters
-    c1, c2 = st.columns(2)
-    with c1:
-        teams = sorted([t for t in df["Team"].dropna().unique()])
-        sel_teams = st.multiselect("Team", teams, default=teams)
-    with c2:
-        phases = ["Regular play","Fast break","Set piece","Corner","Freekick","Corner situation","Direct freekick","Throw in","Individual play","Penalty"]
-        sel_phases = st.multiselect("Phase", phases, default=phases)
-
-    df_f = df[df["Team"].isin(sel_teams) & df["Phase"].isin(sel_phases)].copy()
-    if df_f.empty:
-        st.info("Ingen data efter filtrering.")
-        return
-
-    # KPIs
-    k1, k2, k3 = st.columns(3)
-    with k1: st.metric("Kampe", df_f["Match"].nunique())
-    with k2: st.metric("Afslutninger (xG events)", len(df_f))
-    with k3: st.metric("Total xG", round(float(df_f["xG"].sum()), 2))
-
-    # NEW: Phase summary (league-wide over selection)
-    st.subheader("Phase summary (xG & shots)")
-    g_phase = (df_f.groupby("Phase", dropna=False)
-                  .agg(Shots=("event_id","count"), xG=("xG","sum"))
-                  .reset_index()
-                  .sort_values("xG", ascending=False))
-    g_phase["xG"] = g_phase["xG"].astype(float).round(3)
-    g_phase["Avg xG/shot"] = (g_phase["xG"] / g_phase["Shots"]).round(3)
-    total_xg = g_phase["xG"].sum()
-    if total_xg and total_xg != 0:
-        g_phase["Share xG"] = (g_phase["xG"] / total_xg * 100.0).round(1).astype(str) + "%"
-    else:
-        g_phase["Share xG"] = "0.0%"
-    st.dataframe(g_phase, hide_index=True, use_container_width=True)
-
-    # xG per phase per team (stacked bar)
-    g = df_f.groupby(["Team","Phase"], dropna=False)["xG"].sum().reset_index()
-    chart = (
-        alt.Chart(g)
-           .mark_bar()
-           .encode(
-               x=alt.X("sum(xG):Q", title="xG"),
-               y=alt.Y("Team:N", sort="-x"),
-               color=alt.Color("Phase:N"),
-               tooltip=["Team","Phase","xG"]
-           )
-           .properties(height=max(320, 26*len(g["Team"].unique())))
-    )
-    st.altair_chart(chart, use_container_width=True)
-
-    # Top players by xG
-    st.subheader("Top players by xG")
-    top_players = (df_f.groupby(["Player","Team"], dropna=False)["xG"]
-                     .sum().reset_index()
-                     .sort_values("xG", ascending=False).head(25))
-    st.dataframe(top_players, hide_index=True, use_container_width=True)
-
-    # Raw table
-    with st.expander("Alle afslutninger (raw)"):
-        show_cols = ["Round","Match","Team","Player","min","sec","xG","Phase","event_id"]
-        st.dataframe(df_f[show_cols].sort_values(["Round","Match","min","sec"]), hide_index=True, use_container_width=True)
