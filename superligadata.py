@@ -3487,3 +3487,274 @@ PHASE_LABELS = {
 
 # === SHOTS MODULE (auto) — add missing priority with Penalty ===
 PHASE_SPECIFIC_PRIORITY = [9, 25, 96, 97, 26, 24, 160, 23]
+
+# === SHOTS: helpers & parsers ===
+import xml.etree.ElementTree as ET
+from pathlib import Path
+import pandas as pd
+import streamlit as st
+import altair as alt
+import re
+
+def _safe_int(x, default=0):
+    try:
+        return int(x)
+    except Exception:
+        return default
+
+def build_player_map_from_f7(f7_path: Path) -> dict:
+    mp = {}
+    if not (f7_path and f7_path.exists()):
+        return mp
+    root = ET.parse(str(f7_path)).getroot()
+    for p in root.findall(".//Player"):
+        uid = p.get("uID") or ""
+        num = uid[1:] if uid.startswith("p") else uid
+        known = (p.findtext("./PersonName/Known") or "").strip()
+        first = (p.findtext("./PersonName/First") or "").strip()
+        last  = (p.findtext("./PersonName/Last") or "").strip()
+        name = known or " ".join([w for w in [first, last] if w])
+        if not name:
+            name = num or uid
+        if num: mp[num] = name
+        if uid: mp[uid] = name
+    return mp
+
+def build_team_maps_from_f7(f7_path: Path):
+    names, shorts = {}, {}
+    if not (f7_path and f7_path.exists()):
+        return names, shorts
+    root = ET.parse(str(f7_path)).getroot()
+    for team in root.findall(".//Team"):
+        tid = team.get("uID") or ""
+        num = tid[1:] if tid.startswith("t") else tid
+        name = (team.findtext("./Name") or "").strip()
+        short = (team.findtext("./ShortName") or "").strip()
+        for key in filter(None, [tid, num]):
+            names[key] = name or names.get(key, key)
+            shorts[key] = short or shorts.get(key, short or name or key)
+    return names, shorts
+
+def list_round_dirs(base_dir: str):
+    p = Path(base_dir)
+    if not p.exists():
+        return []
+    def rnum(x: Path):
+        m = re.search(r"R(\d+)$", x.name)
+        return int(m.group(1)) if m else None
+    return sorted([d for d in p.iterdir() if d.is_dir() and rnum(d) is not None], key=lambda d: int(re.search(r"R(\d+)$", d.name).group(1)))
+
+def collect_round_data(round_dir: Path):
+    rows = []
+    for f24 in sorted(round_dir.glob("f24-*-eventdetails.xml")):
+        base = f24.name.replace("-eventdetails.xml", "")
+        parts = base.split("-")
+        if len(parts) < 4:
+            continue
+        comp, season, matchid = parts[1], parts[2], parts[3]
+        f70 = round_dir / f"f70-{comp}-{season}-{matchid}-expectedgoals.xml"
+        f7  = round_dir / f"srml-{comp}-{season}-f{matchid}-matchresults.xml"
+        rows.append({
+            "Match": matchid,
+            "F24 file": f24.name,
+            "F70 file": f70.name if f70.exists() else "(mangler)",
+            "F7 file":  f7.name  if f7.exists()  else "(mangler)",
+        })
+    return rows
+
+def _pick_phase_from_qset(qset: set[int]) -> str:
+    # Uses global PHASE_LABELS and PHASE_SPECIFIC_PRIORITY already defined above
+    for pid in PHASE_SPECIFIC_PRIORITY:
+        if pid in qset:
+            return PHASE_LABELS[pid]
+    if 22 in qset:
+        return PHASE_LABELS[22]
+    if 215 in qset:
+        return PHASE_LABELS[215]
+    return PHASE_LABELS[22]
+
+def _build_xg_phase_from_f70(f70_path: Path) -> dict:
+    out = {}
+    if not (f70_path and f70_path.exists()):
+        return out
+    root = ET.parse(str(f70_path)).getroot()
+    for ev in root.findall(".//Event"):
+        eid = ev.get("event_id") or ev.get("id")
+        if not eid:
+            continue
+        qset = set()
+        xg_val = None
+        for q in ev.findall("./Q"):
+            qid = q.get("qualifier_id")
+            if qid and qid.isdigit():
+                qset.add(int(qid))
+            if qid == "321":
+                try:
+                    xg_val = float(q.get("value", "0"))
+                except Exception:
+                    xg_val = None
+        if xg_val is not None:
+            out[str(eid)] = {"xG": xg_val, "phase": _pick_phase_from_qset(qset)}
+    return out
+
+def _build_event_lookup_from_f24(f24_path: Path) -> dict:
+    lk = {}
+    if not (f24_path and f24_path.exists()):
+        return lk
+    root = ET.parse(str(f24_path)).getroot()
+    for ev in root.findall(".//Event"):
+        eid = ev.get("event_id") or ev.get("id")
+        if not eid:
+            continue
+        lk[str(eid)] = {
+            "team_id": ev.get("team_id", ""),
+            "player_id": ev.get("player_id", ""),
+            "min": int(ev.get("min", "0") or 0),
+            "sec": int(ev.get("sec", "0") or 0),
+        }
+    return lk
+
+@st.cache_data(show_spinner=False)
+def parse_shots_from_match(f24_path: str, f70_path: str, f7_path: str | None):
+    f24 = Path(f24_path); f70 = Path(f70_path) if f70_path else None; f7  = Path(f7_path) if f7_path else None
+    if not (f24.exists() and f70 and f70.exists()):
+        return pd.DataFrame()
+    xg_phase = _build_xg_phase_from_f70(f70)
+    if not xg_phase:
+        return pd.DataFrame()
+    f24_lk = _build_event_lookup_from_f24(f24)
+    name_map = build_player_map_from_f7(f7) if (f7 and f7.exists()) else {}
+    team_map, _ = build_team_maps_from_f7(f7) if (f7 and f7.exists()) else ({}, {})
+    rows = []
+    for eid, d in xg_phase.items():
+        meta = f24_lk.get(eid, {})
+        pid = meta.get("player_id", "")
+        pid_num = pid[1:] if isinstance(pid, str) and pid.startswith("p") else pid
+        pname = name_map.get(pid) or name_map.get(pid_num) or pid_num or "Unknown"
+        team_id = meta.get("team_id", "")
+        team = team_map.get(team_id, team_id)
+        rows.append({
+            "event_id": eid,
+            "Team": team,
+            "Player": pname,
+            "min": meta.get("min", None),
+            "sec": meta.get("sec", None),
+            "xG": d["xG"],
+            "Phase": d["phase"],
+        })
+    df = pd.DataFrame(rows)
+    df["time_s"] = df["min"].astype(float)*60 + df["sec"].astype(float)
+    return df.sort_values(["time_s", "event_id"]).reset_index(drop=True)
+
+@st.cache_data(show_spinner=False)
+def collect_shots_all_rounds(base_dir: str, round_min: int, round_max: int):
+    all_round_dirs = list_round_dirs(base_dir)
+    if not all_round_dirs:
+        return pd.DataFrame()
+    def rnum(p: Path):
+        m = re.search(r"R(\d+)$", p.name)
+        return int(m.group(1)) if m else None
+    selected = [p for p in all_round_dirs if (rnum(p) is not None and round_min <= rnum(p) <= round_max)]
+    all_rows = []
+    for rd in selected:
+        rows = collect_round_data(rd)
+        if not rows:
+            continue
+        import pandas as _pd
+        df_round = _pd.DataFrame(rows)
+        for _, r in df_round.iterrows():
+            f24 = rd / r["F24 file"]
+            f70 = (rd / r["F70 file"]) if r["F70 file"] != "(mangler)" else None
+            f7  = (rd / r["F7 file"])  if r["F7 file"]  != "(mangler)" else None
+            if not (f24.exists() and f70 and f70.exists()):
+                continue
+            df_match = parse_shots_from_match(str(f24), str(f70), str(f7) if f7 else None)
+            if df_match.empty:
+                continue
+            df_match["Round"] = rd.name
+            df_match["Match"] = r["Match"]
+            all_rows.append(df_match)
+    return pd.concat(all_rows, ignore_index=True) if all_rows else pd.DataFrame()
+
+# === SHOTS: Streamlit view ===
+def render_shots_module():
+    st.header("Shots — xG & Play Phase (Rounds 1–11)")
+
+    # Base dir with fallbacks
+    try:
+        default_base = DATA_BASE
+    except NameError:
+        import os
+        default_base = os.environ.get("FCK_DATA_BASE", "./data")
+    base_dir = st.text_input("Data folder (indeholder R1..R11)", value=str(default_base))
+    round_min = st.number_input("Fra runde", min_value=1, max_value=33, value=1, step=1)
+    round_max = st.number_input("Til runde", min_value=round_min, max_value=33, value=max(11, round_min), step=1)
+
+    with st.spinner("Sammenstiller afslutninger..."):
+        df = collect_shots_all_rounds(base_dir, int(round_min), int(round_max))
+
+    if df.empty:
+        st.info("Ingen afslutninger med xG fundet i det valgte interval.")
+        return
+
+    # Filters
+    c1, c2 = st.columns(2)
+    with c1:
+        teams = sorted([t for t in df["Team"].dropna().unique()])
+        sel_teams = st.multiselect("Team", teams, default=teams)
+    with c2:
+        phases = ["Regular play","Fast break","Set piece","Corner","Freekick","Corner situation","Direct freekick","Throw in","Individual play","Penalty"]
+        sel_phases = st.multiselect("Phase", phases, default=phases)
+
+    df_f = df[df["Team"].isin(sel_teams) & df["Phase"].isin(sel_phases)].copy()
+    if df_f.empty:
+        st.info("Ingen data efter filtrering.")
+        return
+
+    # KPIs
+    k1, k2, k3 = st.columns(3)
+    with k1: st.metric("Kampe", df_f["Match"].nunique())
+    with k2: st.metric("Afslutninger (xG events)", len(df_f))
+    with k3: st.metric("Total xG", round(float(df_f["xG"].sum()), 2))
+
+    # NEW: Phase summary (league-wide over selection)
+    st.subheader("Phase summary (xG & shots)")
+    g_phase = (df_f.groupby("Phase", dropna=False)
+                  .agg(Shots=("event_id","count"), xG=("xG","sum"))
+                  .reset_index()
+                  .sort_values("xG", ascending=False))
+    g_phase["xG"] = g_phase["xG"].astype(float).round(3)
+    g_phase["Avg xG/shot"] = (g_phase["xG"] / g_phase["Shots"]).round(3)
+    total_xg = g_phase["xG"].sum()
+    if total_xg and total_xg != 0:
+        g_phase["Share xG"] = (g_phase["xG"] / total_xg * 100.0).round(1).astype(str) + "%"
+    else:
+        g_phase["Share xG"] = "0.0%"
+    st.dataframe(g_phase, hide_index=True, use_container_width=True)
+
+    # xG per phase per team (stacked bar)
+    g = df_f.groupby(["Team","Phase"], dropna=False)["xG"].sum().reset_index()
+    chart = (
+        alt.Chart(g)
+           .mark_bar()
+           .encode(
+               x=alt.X("sum(xG):Q", title="xG"),
+               y=alt.Y("Team:N", sort="-x"),
+               color=alt.Color("Phase:N"),
+               tooltip=["Team","Phase","xG"]
+           )
+           .properties(height=max(320, 26*len(g["Team"].unique())))
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+    # Top players by xG
+    st.subheader("Top players by xG")
+    top_players = (df_f.groupby(["Player","Team"], dropna=False)["xG"]
+                     .sum().reset_index()
+                     .sort_values("xG", ascending=False).head(25))
+    st.dataframe(top_players, hide_index=True, use_container_width=True)
+
+    # Raw table
+    with st.expander("Alle afslutninger (raw)"):
+        show_cols = ["Round","Match","Team","Player","min","sec","xG","Phase","event_id"]
+        st.dataframe(df_f[show_cols].sort_values(["Round","Match","min","sec"]), hide_index=True, use_container_width=True)
