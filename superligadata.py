@@ -3792,5 +3792,3 @@ def _build_event_lookup_from_f24(f24_path: Path) -> dict:
         }
     return lk
 
-@st.cache_data(show_spinner=False)
-
