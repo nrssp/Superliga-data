@@ -3487,6 +3487,73 @@ def render_xg_module():
 
 
 
+
+
+def parse_shots_from_match(f24_path: str, f70_path: str, f7_path: str | None):
+    f24 = Path(f24_path); f70 = Path(f70_path) if f70_path else None; f7  = Path(f7_path) if f7_path else None
+    if not (f24.exists() and f70 and f70.exists()):
+        return pd.DataFrame()
+    xg_phase = _build_xg_phase_from_f70(f70)
+    if not xg_phase:
+        return pd.DataFrame()
+    f24_lk = _build_event_lookup_from_f24(f24)
+    name_map = build_player_map_from_f7(f7) if (f7 and f7.exists()) else {}
+    team_map, _ = build_team_maps_from_f7(f7) if (f7 and f7.exists()) else ({}, {})
+    rows = []
+    for eid, d in xg_phase.items():
+        meta = f24_lk.get(eid, {})
+        pid = meta.get("player_id", "")
+        pid_num = pid[1:] if isinstance(pid, str) and pid.startswith("p") else pid
+        pname = name_map.get(pid) or name_map.get(pid_num) or pid_num or "Unknown"
+        team_id = meta.get("team_id", "")
+        team = team_map.get(team_id, team_id)
+        rows.append({
+            "event_id": eid,
+            "Team": team,
+            "Player": pname,
+            "min": meta.get("min", None),
+            "sec": meta.get("sec", None),
+            "xG": d["xG"],
+            "Phase": d["phase"],
+        })
+    df = pd.DataFrame(rows)
+    df["time_s"] = df["min"].astype(float)*60 + df["sec"].astype(float)
+    return df.sort_values(["time_s", "event_id"]).reset_index(drop=True)
+
+@st.cache_data(show_spinner=False)
+
+def collect_shots_all_rounds(base_dir: str, round_min: int, round_max: int):
+    all_round_dirs = list_round_dirs(base_dir)
+    if not all_round_dirs:
+        return pd.DataFrame()
+    def rnum(p: Path):
+        m = re.search(r"R(\d+)$", p.name)
+        return int(m.group(1)) if m else None
+    selected = [p for p in all_round_dirs if (rnum(p) is not None and round_min <= rnum(p) <= round_max)]
+    all_rows = []
+    for rd in selected:
+        rows = collect_round_data(rd)
+        if not rows:
+            continue
+        import pandas as _pd
+        df_round = _pd.DataFrame(rows)
+        for _, r in df_round.iterrows():
+            f24 = rd / r["F24 file"]
+            f70 = (rd / r["F70 file"]) if r["F70 file"] != "(mangler)" else None
+            f7  = (rd / r["F7 file"])  if r["F7 file"]  != "(mangler)" else None
+            if not (f24.exists() and f70 and f70.exists()):
+                continue
+            df_match = parse_shots_from_match(str(f24), str(f70), str(f7) if f7 else None)
+            if df_match.empty:
+                continue
+            df_match["Round"] = rd.name
+            df_match["Match"] = r["Match"]
+            all_rows.append(df_match)
+    return pd.concat(all_rows, ignore_index=True) if all_rows else pd.DataFrame()
+
+# === SHOTS: Streamlit view ===
+
+
 def render_shots_module():
     st.header("Shots — xG & Play Phase (Rounds 1–11)")
 
@@ -3726,65 +3793,4 @@ def _build_event_lookup_from_f24(f24_path: Path) -> dict:
     return lk
 
 @st.cache_data(show_spinner=False)
-def parse_shots_from_match(f24_path: str, f70_path: str, f7_path: str | None):
-    f24 = Path(f24_path); f70 = Path(f70_path) if f70_path else None; f7  = Path(f7_path) if f7_path else None
-    if not (f24.exists() and f70 and f70.exists()):
-        return pd.DataFrame()
-    xg_phase = _build_xg_phase_from_f70(f70)
-    if not xg_phase:
-        return pd.DataFrame()
-    f24_lk = _build_event_lookup_from_f24(f24)
-    name_map = build_player_map_from_f7(f7) if (f7 and f7.exists()) else {}
-    team_map, _ = build_team_maps_from_f7(f7) if (f7 and f7.exists()) else ({}, {})
-    rows = []
-    for eid, d in xg_phase.items():
-        meta = f24_lk.get(eid, {})
-        pid = meta.get("player_id", "")
-        pid_num = pid[1:] if isinstance(pid, str) and pid.startswith("p") else pid
-        pname = name_map.get(pid) or name_map.get(pid_num) or pid_num or "Unknown"
-        team_id = meta.get("team_id", "")
-        team = team_map.get(team_id, team_id)
-        rows.append({
-            "event_id": eid,
-            "Team": team,
-            "Player": pname,
-            "min": meta.get("min", None),
-            "sec": meta.get("sec", None),
-            "xG": d["xG"],
-            "Phase": d["phase"],
-        })
-    df = pd.DataFrame(rows)
-    df["time_s"] = df["min"].astype(float)*60 + df["sec"].astype(float)
-    return df.sort_values(["time_s", "event_id"]).reset_index(drop=True)
 
-@st.cache_data(show_spinner=False)
-def collect_shots_all_rounds(base_dir: str, round_min: int, round_max: int):
-    all_round_dirs = list_round_dirs(base_dir)
-    if not all_round_dirs:
-        return pd.DataFrame()
-    def rnum(p: Path):
-        m = re.search(r"R(\d+)$", p.name)
-        return int(m.group(1)) if m else None
-    selected = [p for p in all_round_dirs if (rnum(p) is not None and round_min <= rnum(p) <= round_max)]
-    all_rows = []
-    for rd in selected:
-        rows = collect_round_data(rd)
-        if not rows:
-            continue
-        import pandas as _pd
-        df_round = _pd.DataFrame(rows)
-        for _, r in df_round.iterrows():
-            f24 = rd / r["F24 file"]
-            f70 = (rd / r["F70 file"]) if r["F70 file"] != "(mangler)" else None
-            f7  = (rd / r["F7 file"])  if r["F7 file"]  != "(mangler)" else None
-            if not (f24.exists() and f70 and f70.exists()):
-                continue
-            df_match = parse_shots_from_match(str(f24), str(f70), str(f7) if f7 else None)
-            if df_match.empty:
-                continue
-            df_match["Round"] = rd.name
-            df_match["Match"] = r["Match"]
-            all_rows.append(df_match)
-    return pd.concat(all_rows, ignore_index=True) if all_rows else pd.DataFrame()
-
-# === SHOTS: Streamlit view ===
