@@ -3702,3 +3702,78 @@ if module.startswith("Throw-ins"):
     render_throwins_module()
 elif module.startswith("xG"):
     render_xg_module()
+
+
+
+# === SHOTS: Streamlit view ===
+def render_shots_module():
+    st.header("Shots — xG & Play Phase (Rounds 1–11)")
+
+    # Vælg data-mappe (hvor R1..R11 ligger)
+    base_dir = st.text_input("Data folder (indeholder R1..R11)", value=str(DEFAULT_BASE_FROM_CACHE or "./data"))
+    round_min = st.number_input("Fra runde", min_value=1, max_value=33, value=1, step=1)
+    round_max = st.number_input("Til runde", min_value=round_min, max_value=33, value=max(11, round_min), step=1)
+
+    with st.spinner("Sammenstiller afslutninger..."):
+        df = collect_shots_all_rounds(base_dir, int(round_min), int(round_max))
+
+    if df.empty:
+        st.info("Ingen afslutninger med xG fundet i det valgte interval.")
+        return
+
+    # Filtre
+    c1, c2 = st.columns(2)
+    with c1:
+        teams = sorted([t for t in df["Team"].dropna().unique()])
+        sel_teams = st.multiselect("Team", teams, default=teams)
+    with c2:
+        phases = ["Regular play","Fast break","Set piece","Corner","Freekick","Corner situation","Direct freekick","Throw in","Individual play"]
+        sel_phases = st.multiselect("Phase", phases, default=phases)
+
+    df_f = df[df["Team"].isin(sel_teams) & df["Phase"].isin(sel_phases)].copy()
+    if df_f.empty:
+        st.info("Ingen data efter filtrering.")
+        return
+
+    # KPI'er
+    k1, k2, k3 = st.columns(3)
+    with k1: st.metric("Kampe", df_f["Match"].nunique())
+    with k2: st.metric("Afslutninger (xG events)", len(df_f))
+    with k3: st.metric("Total xG", round(float(df_f["xG"].sum()), 2))
+
+    # xG pr. fase pr. hold (stacked bar)
+    g = df_f.groupby(["Team","Phase"], dropna=False)["xG"].sum().reset_index()
+    chart = (
+        alt.Chart(g)
+           .mark_bar()
+           .encode(
+               x=alt.X("sum(xG):Q", title="xG"),
+               y=alt.Y("Team:N", sort="-x"),
+               color=alt.Color("Phase:N"),
+               tooltip=["Team","Phase","xG"]
+           )
+           .properties(height=max(320, 26*len(g["Team"].unique())))
+    )
+    st.altair_chart(chart, use_container_width=True)
+
+    # Top spillere på xG
+    st.subheader("Top players by xG")
+    top_players = (df_f.groupby(["Player","Team"], dropna=False)["xG"]
+                     .sum().reset_index()
+                     .sort_values("xG", ascending=False).head(25))
+    st.dataframe(top_players, hide_index=True, use_container_width=True)
+
+    # Raw tabel
+    with st.expander("Alle afslutninger (raw)"):
+        show_cols = ["Round","Match","Team","Player","min","sec","xG","Phase","event_id"]
+        st.dataframe(df_f[show_cols].sort_values(["Round","Match","min","sec"]), hide_index=True, use_container_width=True)
+
+
+
+# --- Shots module hookup ---
+try:
+    _shots_hook_done
+except NameError:
+    if str(st.session_state.get("module_switcher", ""))[:5].lower() == "shots" or str(module)[:5].lower() == "shots":
+        render_shots_module()
+    _shots_hook_done = True
