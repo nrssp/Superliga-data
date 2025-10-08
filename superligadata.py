@@ -1,3 +1,26 @@
+
+# === SHOTS constants guard (ensures available before use) ===
+try:
+    PHASE_LABELS
+except NameError:
+    PHASE_LABELS = {
+        9: "Penalty",
+        22: "Regular play",
+        23: "Fast break",
+        24: "Set piece",
+        25: "Corner",
+        26: "Freekick",
+        96: "Corner situation",
+        97: "Direct freekick",
+        160: "Throw in",
+        215: "Individual play",
+    }
+try:
+    PHASE_SPECIFIC_PRIORITY
+except NameError:
+    PHASE_SPECIFIC_PRIORITY = [9, 25, 96, 97, 26, 24, 160, 23]
+# === end SHOTS constants guard ===
+
 import re
 from collections import defaultdict
 from pathlib import Path
