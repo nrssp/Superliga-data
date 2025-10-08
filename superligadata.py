@@ -3468,6 +3468,9 @@ def render_xg_module():
 # =========================
 if module.startswith("Throw-ins"):
     render_throwins_module()
+
+elif module.startswith("Shots"):
+    render_shots_module()
 elif module.startswith("xG"):
     render_xg_module()
 
