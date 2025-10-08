@@ -3489,6 +3489,64 @@ def render_xg_module():
 
 
 
+
+
+def _pick_phase_from_qset(qset: set[int]) -> str:
+    # Uses global PHASE_LABELS and PHASE_SPECIFIC_PRIORITY already defined above
+    for pid in PHASE_SPECIFIC_PRIORITY:
+        if pid in qset:
+            return PHASE_LABELS[pid]
+    if 22 in qset:
+        return PHASE_LABELS[22]
+    if 215 in qset:
+        return PHASE_LABELS[215]
+    return PHASE_LABELS[22]
+
+
+def _build_xg_phase_from_f70(f70_path: Path) -> dict:
+    out = {}
+    if not (f70_path and f70_path.exists()):
+        return out
+    root = ET.parse(str(f70_path)).getroot()
+    for ev in root.findall(".//Event"):
+        eid = ev.get("event_id") or ev.get("id")
+        if not eid:
+            continue
+        qset = set()
+        xg_val = None
+        for q in ev.findall("./Q"):
+            qid = q.get("qualifier_id")
+            if qid and qid.isdigit():
+                qset.add(int(qid))
+            if qid == "321":
+                try:
+                    xg_val = float(q.get("value", "0"))
+                except Exception:
+                    xg_val = None
+        if xg_val is not None:
+            out[str(eid)] = {"xG": xg_val, "phase": _pick_phase_from_qset(qset)}
+    return out
+
+
+def _build_event_lookup_from_f24(f24_path: Path) -> dict:
+    lk = {}
+    if not (f24_path and f24_path.exists()):
+        return lk
+    root = ET.parse(str(f24_path)).getroot()
+    for ev in root.findall(".//Event"):
+        eid = ev.get("event_id") or ev.get("id")
+        if not eid:
+            continue
+        lk[str(eid)] = {
+            "team_id": ev.get("team_id", ""),
+            "player_id": ev.get("player_id", ""),
+            "min": int(ev.get("min", "0") or 0),
+            "sec": int(ev.get("sec", "0") or 0),
+        }
+    return lk
+
+
+
 def parse_shots_from_match(f24_path: str, f70_path: str, f7_path: str | None):
     f24 = Path(f24_path); f70 = Path(f70_path) if f70_path else None; f7  = Path(f7_path) if f7_path else None
     if not (f24.exists() and f70 and f70.exists()):
@@ -3740,55 +3798,5 @@ def collect_round_data(round_dir: Path):
         })
     return rows
 
-def _pick_phase_from_qset(qset: set[int]) -> str:
-    # Uses global PHASE_LABELS and PHASE_SPECIFIC_PRIORITY already defined above
-    for pid in PHASE_SPECIFIC_PRIORITY:
-        if pid in qset:
-            return PHASE_LABELS[pid]
-    if 22 in qset:
-        return PHASE_LABELS[22]
-    if 215 in qset:
-        return PHASE_LABELS[215]
-    return PHASE_LABELS[22]
 
-def _build_xg_phase_from_f70(f70_path: Path) -> dict:
-    out = {}
-    if not (f70_path and f70_path.exists()):
-        return out
-    root = ET.parse(str(f70_path)).getroot()
-    for ev in root.findall(".//Event"):
-        eid = ev.get("event_id") or ev.get("id")
-        if not eid:
-            continue
-        qset = set()
-        xg_val = None
-        for q in ev.findall("./Q"):
-            qid = q.get("qualifier_id")
-            if qid and qid.isdigit():
-                qset.add(int(qid))
-            if qid == "321":
-                try:
-                    xg_val = float(q.get("value", "0"))
-                except Exception:
-                    xg_val = None
-        if xg_val is not None:
-            out[str(eid)] = {"xG": xg_val, "phase": _pick_phase_from_qset(qset)}
-    return out
-
-def _build_event_lookup_from_f24(f24_path: Path) -> dict:
-    lk = {}
-    if not (f24_path and f24_path.exists()):
-        return lk
-    root = ET.parse(str(f24_path)).getroot()
-    for ev in root.findall(".//Event"):
-        eid = ev.get("event_id") or ev.get("id")
-        if not eid:
-            continue
-        lk[str(eid)] = {
-            "team_id": ev.get("team_id", ""),
-            "player_id": ev.get("player_id", ""),
-            "min": int(ev.get("min", "0") or 0),
-            "sec": int(ev.get("sec", "0") or 0),
-        }
-    return lk
 
