@@ -3470,3 +3470,20 @@ if module.startswith("Throw-ins"):
     render_throwins_module()
 elif module.startswith("xG"):
     render_xg_module()
+
+# === SHOTS MODULE (auto) — add missing PHASE_LABELS with Penalty support ===
+PHASE_LABELS = {
+    9: "Penalty",
+    22: "Regular play",
+    23: "Fast break",
+    24: "Set piece",
+    25: "Corner",
+    26: "Freekick",
+    96: "Corner situation",
+    97: "Direct freekick",
+    160: "Throw in",
+    215: "Individual play",
+}
+
+# === SHOTS MODULE (auto) — add missing priority with Penalty ===
+PHASE_SPECIFIC_PRIORITY = [9, 25, 96, 97, 26, 24, 160, 23]
