@@ -3182,7 +3182,11 @@ def render_throwins_module():
         st.header("Matches")
         for round_dir in list_round_dirs(DATA_BASE):
             rows = collect_round_data(round_dir)
-            if rows:
+            if not rows:
+                continue
+
+                df = pd.DataFrame(rows)
+
                 if "_sortdate" in df.columns:
                     df = df.sort_values("_sortdate", na_position="last")
                 st.subheader(round_dir.name)
