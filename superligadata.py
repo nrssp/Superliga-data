@@ -68,10 +68,9 @@ def build_team_maps_from_f7(f7_path: Path):
         num = tid[1:] if tid.startswith("t") else tid
         name = (team.findtext("./Name") or "").strip()
         short = (team.findtext("./ShortName") or "").strip()
-        canon_name = normalize_team_name(name)
         for key in filter(None, [tid, num]):
-            names[key] = canon_name or names.get(key, key)
-            shorts[key] = short or shorts.get(key, short or canon_name or key)
+            names[key] = name or names.get(key, key)
+            shorts[key] = short or shorts.get(key, short or name or key)
     return names, shorts
 
 def list_round_dirs(base_dir: str) -> list[Path]:
@@ -836,11 +835,6 @@ def get_match_info_from_f24(f24_path: Path):
     except Exception:
         pass
 
-    if home:
-        home = normalize_team_name(home)
-    if away:
-        away = normalize_team_name(away)
-
     match_name = f"{home} - {away}" if home and away else f24_path.stem
     match_date = None
     if date:
@@ -910,10 +904,9 @@ def build_team_maps_from_f7(f7_path: Path):
             name_el = team.find("Name")
             name = (name_el.text if name_el is not None else None) or team.attrib.get("TeamName")
             if uid and name:
-                canon_name = normalize_team_name(name)
-                name_map[uid] = canon_name
+                name_map[uid] = name
                 if uid.startswith("t") and uid[1:].isdigit():
-                    name_map[uid[1:]] = canon_name
+                    name_map[uid[1:]] = name
         for td in root.findall(".//MatchData/TeamData"):
             tref = td.attrib.get("TeamRef"); side = td.attrib.get("Side")
             if tref and side:
@@ -1234,7 +1227,7 @@ def _enrich_throwins_with_sequences(
 # --- Outlier / retention / versions ------------------------------------------
 OUTLIER_THR = 40
 BALL_RETENTION_THR_S = 7.0
-SCHEMA_VER = 12  # cache-bust
+SCHEMA_VER = 13  # cache-bust
 # -----------------------------------------------------------------------------
 
 def _mark_outliers(df: pd.DataFrame, thr: float = OUTLIER_THR) -> pd.Series:
@@ -1504,7 +1497,18 @@ def render_xg_module():
         season_df["is_outlier"] = _mark_outliers(season_df)
         season_df_used = season_df[~season_df["is_outlier"]].copy()
 
-        g = season_df_used.groupby("Team", dropna=False)
+        
+# --- FIX: unify Sønderjyske naming ---
+season_df["Team"] = season_df["Team"].replace({
+    "SønderjyskE": "Sønderjyske",
+    "Sønderjyske": "Sønderjyske",
+})
+season_df_used["Team"] = season_df_used["Team"].replace({
+    "SønderjyskE": "Sønderjyske",
+    "Sønderjyske": "Sønderjyske",
+})
+
+g = season_df_used.groupby("Team", dropna=False)
 
         games = g["Match"].nunique().rename("Games")
         tot_throw = g.size().rename("Total throw-ins")
@@ -1672,7 +1676,18 @@ def render_xg_module():
         season_cmp_used = season_cmp[~season_cmp["is_outlier"]].copy()
 
         # Aggreger pr. hold
-        gcmp = season_cmp_used.groupby("Team", dropna=False)
+        
+# --- FIX: unify Sønderjyske naming (comparison) ---
+season_cmp["Team"] = season_cmp["Team"].replace({
+    "SønderjyskE": "Sønderjyske",
+    "Sønderjyske": "Sønderjyske",
+})
+season_cmp_used["Team"] = season_cmp_used["Team"].replace({
+    "SønderjyskE": "Sønderjyske",
+    "Sønderjyske": "Sønderjyske",
+})
+
+gcmp = season_cmp_used.groupby("Team", dropna=False)
         games_cmp = gcmp["Match"].nunique().rename("Games")
         tot_throw_cmp = gcmp.size().rename("Total throw-ins")
         avg_delay_cmp = gcmp["Delay (s)"].mean().rename("Avg. delay (s)")
@@ -2498,7 +2513,18 @@ def render_throwins_module():
         season_df["is_outlier"] = _mark_outliers(season_df)
         season_df_used = season_df[~season_df["is_outlier"]].copy()
 
-        g = season_df_used.groupby("Team", dropna=False)
+        
+# --- FIX: unify Sønderjyske naming ---
+season_df["Team"] = season_df["Team"].replace({
+    "SønderjyskE": "Sønderjyske",
+    "Sønderjyske": "Sønderjyske",
+})
+season_df_used["Team"] = season_df_used["Team"].replace({
+    "SønderjyskE": "Sønderjyske",
+    "Sønderjyske": "Sønderjyske",
+})
+
+g = season_df_used.groupby("Team", dropna=False)
 
         games = g["Match"].nunique().rename("Games")
         tot_throw = g.size().rename("Total throw-ins")
@@ -2662,7 +2688,18 @@ def render_throwins_module():
         season_cmp["is_outlier"] = _mark_outliers(season_cmp)
         season_cmp_used = season_cmp[~season_cmp["is_outlier"]].copy()
 
-        gcmp = season_cmp_used.groupby("Team", dropna=False)
+        
+# --- FIX: unify Sønderjyske naming (comparison) ---
+season_cmp["Team"] = season_cmp["Team"].replace({
+    "SønderjyskE": "Sønderjyske",
+    "Sønderjyske": "Sønderjyske",
+})
+season_cmp_used["Team"] = season_cmp_used["Team"].replace({
+    "SønderjyskE": "Sønderjyske",
+    "Sønderjyske": "Sønderjyske",
+})
+
+gcmp = season_cmp_used.groupby("Team", dropna=False)
         games_cmp = gcmp["Match"].nunique().rename("Games")
         tot_throw_cmp = gcmp.size().rename("Total throw-ins")
         avg_delay_cmp = gcmp["Delay (s)"].mean().rename("Avg. delay (s)")
