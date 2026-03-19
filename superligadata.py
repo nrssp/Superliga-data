@@ -21,58 +21,22 @@ def normalize_team_name(name):
         return name
 
     n = (
-        name.replace("\xa0", " ")
-            .strip()
-            .lower()
+        unicodedata.normalize("NFKD", name)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+        .replace("\xa0", " ")
+        .strip()
+        .lower()
     )
+    n = re.sub(r"[^a-z0-9]+", " ", n)
+    n = re.sub(r"\s+", " ", n).strip()
 
-    mapping = {
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske fodbold": "Sønderjyske",
-        "sønderjyske ": "Sønderjyske",
-        "sønderjyskee": "Sønderjyske",   # hvis der skulle komme sær variant
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyskee": "Sønderjyske",
-        "sonderjyske": "Sønderjyske",
-        "sonderjyske fodbold": "Sønderjyske",
-    }
+    if n in {"sonderjyske", "sonderjyske fodbold", "sonderjyskee"}:
+        return "Sønderjyske"
 
-    return mapping.get(n, name.strip())
-    return mapping.get(name, name)
+    return name.strip()
+
+
 # === SHOTS MODULE: constants ===
 PHASE_LABELS = {
     22: "Regular play",
@@ -3185,13 +3149,12 @@ def render_throwins_module():
             if not rows:
                 continue
 
-                df = pd.DataFrame(rows)
+            df = pd.DataFrame(rows)
+            if "_sortdate" in df.columns:
+                df = df.sort_values("_sortdate", na_position="last")
 
-                if "_sortdate" in df.columns:
-                    df = df.sort_values("_sortdate", na_position="last")
-                st.subheader(round_dir.name)
-                st.dataframe(df.drop(columns=["_sortdate"]), hide_index=True)
-
+            st.subheader(round_dir.name)
+            st.dataframe(df.drop(columns=["_sortdate"], errors="ignore"), hide_index=True)
     # ---- Throw in Data (per kamp) ----
     with tab_data:
         st.header("Throw-in data")
@@ -3199,12 +3162,16 @@ def render_throwins_module():
         if rounds:
             round_choice = st.selectbox("Choose round/s", rounds, format_func=lambda p: p.name)
             rows = collect_round_data(round_choice)
-            if rows:
-                match_choice = st.selectbox("Choose game", matches_df["Match"])
+            if not rows:
+                st.info("Ingen kampe fundet i den valgte runde.")
+                st.stop()
 
-                f24_file = matches_df.loc[matches_df["Match"] == match_choice, "F24 file"].values[0]
-                f7_file  = matches_df.loc[matches_df["Match"] == match_choice, "F7 file"].values[0]
-                f70_file = matches_df.loc[matches_df["Match"] == match_choice, "F70 file"].values[0]
+            matches_df = pd.DataFrame(rows)
+            match_choice = st.selectbox("Choose game", matches_df["Match"])
+
+            f24_file = matches_df.loc[matches_df["Match"] == match_choice, "F24 file"].values[0]
+            f7_file  = matches_df.loc[matches_df["Match"] == match_choice, "F7 file"].values[0]
+            f70_file = matches_df.loc[matches_df["Match"] == match_choice, "F70 file"].values[0]
 
                 f24_path = round_choice / f24_file
                 f7_path  = (round_choice / f7_file)  if f7_file  != "(mangler)" else None
