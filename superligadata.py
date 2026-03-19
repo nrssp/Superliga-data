@@ -17,31 +17,18 @@ import os, io, zipfile, requests
 import altair as alt
 
 def normalize_team_name(name):
-    """Normalize all Sønderjyske variants to one club name."""
     if not isinstance(name, str):
         return name
 
     raw = name.replace("\xa0", " ").strip()
-
-    direct = {
-        "Sønderjyske": "Sønderjyske",
-        "Sønderjyske Fodbold": "Sønderjyske",
-        "Sonderjyske": "Sønderjyske",
-        "Sonderjyske Fodbold": "Sønderjyske",
-    }
-    if raw in direct:
-        return direct[raw]
-
     norm = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode("ascii")
     norm = re.sub(r"\s+", " ", norm).strip().lower()
 
-    if norm in {
-        "sonderjyske",
-        "sonderjyske fodbold",
-    }:
+    if norm in {"sonderjyske", "sonderjyske fodbold"}:
         return "Sønderjyske"
 
     return raw
+
 
 # === SHOTS MODULE: constants ===
 PHASE_LABELS = {
