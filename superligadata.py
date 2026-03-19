@@ -16,29 +16,6 @@ import os, io, zipfile, requests
 # === SHOTS MODULE: imports ===
 import altair as alt
 
-def normalize_team_name(name):
-    if not isinstance(name, str):
-        return name
-
-    n = (
-        unicodedata.normalize("NFKD", name)
-        .encode("ascii", "ignore")
-        .decode("ascii")
-        .replace("\xa0", " ")
-        .strip()
-        .lower()
-    )
-    n = re.sub(r"[^a-z0-9]+", " ", n)
-    n = re.sub(r"\s+", " ", n).strip()
-
-    mapping = {
-        "sonderjyske": "Sønderjyske",
-        "sonderjyske fodbold": "Sønderjyske",
-        "sonderjyskee": "Sønderjyske",
-    }
-
-    return mapping.get(n, name.strip())
-
 
 # === SHOTS MODULE: constants ===
 PHASE_LABELS = {
@@ -1522,7 +1499,6 @@ def render_xg_module():
             st.stop()
 
         season_df["Delay (s)"] = pd.to_numeric(season_df["Delay (s)"], errors="coerce")
-        season_df["Team"] = season_df["Team"].apply(normalize_team_name)
         season_df["Shot xG (30s)"] = pd.to_numeric(season_df["Shot xG (30s)"], errors="coerce")
         season_df["is_outlier"] = _mark_outliers(season_df)
         season_df_used = season_df[~season_df["is_outlier"]].copy()
@@ -1690,7 +1666,6 @@ def render_xg_module():
 
         # Rens tal + outliers
         season_cmp["Delay (s)"] = pd.to_numeric(season_cmp["Delay (s)"], errors="coerce")
-        season_cmp["Team"] = season_cmp["Team"].apply(normalize_team_name)
         season_cmp["Shot xG (30s)"] = pd.to_numeric(season_cmp["Shot xG (30s)"], errors="coerce")
         season_cmp["is_outlier"] = _mark_outliers(season_cmp)
         season_cmp_used = season_cmp[~season_cmp["is_outlier"]].copy()
