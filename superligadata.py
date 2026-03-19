@@ -17,6 +17,38 @@ import os, io, zipfile, requests
 import altair as alt
 
 
+def normalize_team_name(name):
+    """Normalize team name so SønderjyskE/Sønderjyske is always one club."""
+    if not isinstance(name, str):
+        return name
+
+    raw = name.replace("\xa0", " ").strip()
+
+    # Direct known mappings first
+    direct = {
+        "SønderjyskE": "Sønderjyske",
+        "Sønderjyske": "Sønderjyske",
+        "Sønderjyske Fodbold": "Sønderjyske",
+        "Sonderjyske": "Sønderjyske",
+        "Sonderjyske Fodbold": "Sønderjyske",
+    }
+    if raw in direct:
+        return direct[raw]
+
+    # Robust fallback for hidden chars / casing / accent loss
+    norm = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode("ascii")
+    norm = re.sub(r"\s+", " ", norm).strip().lower()
+
+    if norm in {
+        "sonderjyske",
+        "sonderjyskee",
+        "sonderjyske fodbold",
+    }:
+        return "Sønderjyske"
+
+    return raw
+
+
 # === SHOTS MODULE: constants ===
 PHASE_LABELS = {
     22: "Regular play",
@@ -68,9 +100,10 @@ def build_team_maps_from_f7(f7_path: Path):
         num = tid[1:] if tid.startswith("t") else tid
         name = (team.findtext("./Name") or "").strip()
         short = (team.findtext("./ShortName") or "").strip()
+        canon_name = normalize_team_name(name)
         for key in filter(None, [tid, num]):
-            names[key] = name or names.get(key, key)
-            shorts[key] = short or shorts.get(key, short or name or key)
+            names[key] = canon_name or names.get(key, key)
+            shorts[key] = short or shorts.get(key, short or canon_name or key)
     return names, shorts
 
 def list_round_dirs(base_dir: str) -> list[Path]:
@@ -209,6 +242,8 @@ def parse_shots_from_match(f24_path: str, f70_path: str, f7_path: str | None) ->
         })
 
     df = pd.DataFrame(rows)
+    if "Team" in df.columns:
+        df["Team"] = df["Team"].apply(normalize_team_name)
     df["time_s"] = df["min"].astype(float)*60 + df["sec"].astype(float)
     return df.sort_values(["time_s", "event_id"]).reset_index(drop=True)
 
@@ -835,6 +870,11 @@ def get_match_info_from_f24(f24_path: Path):
     except Exception:
         pass
 
+    if home:
+        home = normalize_team_name(home)
+    if away:
+        away = normalize_team_name(away)
+
     match_name = f"{home} - {away}" if home and away else f24_path.stem
     match_date = None
     if date:
@@ -904,9 +944,10 @@ def build_team_maps_from_f7(f7_path: Path):
             name_el = team.find("Name")
             name = (name_el.text if name_el is not None else None) or team.attrib.get("TeamName")
             if uid and name:
-                name_map[uid] = name
+                canon_name = normalize_team_name(name)
+                name_map[uid] = canon_name
                 if uid.startswith("t") and uid[1:].isdigit():
-                    name_map[uid[1:]] = name
+                    name_map[uid[1:]] = canon_name
         for td in root.findall(".//MatchData/TeamData"):
             tref = td.attrib.get("TeamRef"); side = td.attrib.get("Side")
             if tref and side:
@@ -1227,7 +1268,7 @@ def _enrich_throwins_with_sequences(
 # --- Outlier / retention / versions ------------------------------------------
 OUTLIER_THR = 40
 BALL_RETENTION_THR_S = 7.0
-SCHEMA_VER = 13  # cache-bust
+SCHEMA_VER = 15  # cache-bust
 # -----------------------------------------------------------------------------
 
 def _mark_outliers(df: pd.DataFrame, thr: float = OUTLIER_THR) -> pd.Series:
@@ -1353,6 +1394,8 @@ def render_xg_module():
         st.stop()
 
     xg_df = pd.DataFrame(all_rows)
+    if "Team" in xg_df.columns:
+        xg_df["Team"] = xg_df["Team"].apply(normalize_team_name)
     g = xg_df.groupby("Team", dropna=False)
     out = pd.DataFrame({
         "Games": g["Match"].nunique(),
@@ -1493,22 +1536,16 @@ def render_xg_module():
             st.stop()
 
         season_df["Delay (s)"] = pd.to_numeric(season_df["Delay (s)"], errors="coerce")
+        season_df["Team"] = season_df["Team"].apply(normalize_team_name)
         season_df["Shot xG (30s)"] = pd.to_numeric(season_df["Shot xG (30s)"], errors="coerce")
         season_df["is_outlier"] = _mark_outliers(season_df)
         season_df_used = season_df[~season_df["is_outlier"]].copy()
 
         
-# --- FIX: unify Sønderjyske naming ---
-season_df["Team"] = season_df["Team"].replace({
-    "SønderjyskE": "Sønderjyske",
-    "Sønderjyske": "Sønderjyske",
-})
-season_df_used["Team"] = season_df_used["Team"].replace({
-    "SønderjyskE": "Sønderjyske",
-    "Sønderjyske": "Sønderjyske",
-})
+                season_df["Team"] = season_df["Team"].apply(normalize_team_name)
+        season_df_used["Team"] = season_df_used["Team"].apply(normalize_team_name)
 
-g = season_df_used.groupby("Team", dropna=False)
+        g = season_df_used.groupby("Team", dropna=False)
 
         games = g["Match"].nunique().rename("Games")
         tot_throw = g.size().rename("Total throw-ins")
@@ -1671,23 +1708,17 @@ g = season_df_used.groupby("Team", dropna=False)
 
         # Rens tal + outliers
         season_cmp["Delay (s)"] = pd.to_numeric(season_cmp["Delay (s)"], errors="coerce")
+        season_cmp["Team"] = season_cmp["Team"].apply(normalize_team_name)
         season_cmp["Shot xG (30s)"] = pd.to_numeric(season_cmp["Shot xG (30s)"], errors="coerce")
         season_cmp["is_outlier"] = _mark_outliers(season_cmp)
         season_cmp_used = season_cmp[~season_cmp["is_outlier"]].copy()
 
         # Aggreger pr. hold
         
-# --- FIX: unify Sønderjyske naming (comparison) ---
-season_cmp["Team"] = season_cmp["Team"].replace({
-    "SønderjyskE": "Sønderjyske",
-    "Sønderjyske": "Sønderjyske",
-})
-season_cmp_used["Team"] = season_cmp_used["Team"].replace({
-    "SønderjyskE": "Sønderjyske",
-    "Sønderjyske": "Sønderjyske",
-})
+                season_cmp["Team"] = season_cmp["Team"].apply(normalize_team_name)
+        season_cmp_used["Team"] = season_cmp_used["Team"].apply(normalize_team_name)
 
-gcmp = season_cmp_used.groupby("Team", dropna=False)
+        gcmp = season_cmp_used.groupby("Team", dropna=False)
         games_cmp = gcmp["Match"].nunique().rename("Games")
         tot_throw_cmp = gcmp.size().rename("Total throw-ins")
         avg_delay_cmp = gcmp["Delay (s)"].mean().rename("Avg. delay (s)")
@@ -1918,6 +1949,7 @@ gcmp = season_cmp_used.groupby("Team", dropna=False)
             st.stop()
 
         indiv_df["Delay (s)"] = pd.to_numeric(indiv_df["Delay (s)"], errors="coerce")
+        indiv_df["Team"] = indiv_df["Team"].apply(normalize_team_name)
         indiv_df["Shot xG (30s)"] = pd.to_numeric(indiv_df["Shot xG (30s)"], errors="coerce").fillna(0.0)
         indiv_df["Distance (m)"] = pd.to_numeric(indiv_df["Distance (m)"], errors="coerce")
         indiv_df["is_outlier"] = _mark_outliers(indiv_df)
@@ -2122,7 +2154,7 @@ gcmp = season_cmp_used.groupby("Team", dropna=False)
         # Sikr kolonner
         if "Taker" not in icons_df.columns:
             icons_df["Taker"] = icons_df.get("Taker id", "").fillna("").replace({"": "Unknown"})
-        icons_df["Team"] = icons_df["Team"].fillna("Unknown")
+        icons_df["Team"] = icons_df["Team"].fillna("Unknown").apply(normalize_team_name)
         icons_df["Taker"] = icons_df["Taker"].fillna("Unknown")
 
         # Hold-liste
@@ -2509,22 +2541,12 @@ def render_throwins_module():
             st.stop()
 
         season_df["Delay (s)"] = pd.to_numeric(season_df["Delay (s)"], errors="coerce")
+        season_df["Team"] = season_df["Team"].apply(normalize_team_name)
         season_df["Shot xG (30s)"] = pd.to_numeric(season_df["Shot xG (30s)"], errors="coerce")
         season_df["is_outlier"] = _mark_outliers(season_df)
         season_df_used = season_df[~season_df["is_outlier"]].copy()
 
-        
-# --- FIX: unify Sønderjyske naming ---
-season_df["Team"] = season_df["Team"].replace({
-    "SønderjyskE": "Sønderjyske",
-    "Sønderjyske": "Sønderjyske",
-})
-season_df_used["Team"] = season_df_used["Team"].replace({
-    "SønderjyskE": "Sønderjyske",
-    "Sønderjyske": "Sønderjyske",
-})
-
-g = season_df_used.groupby("Team", dropna=False)
+        g = season_df_used.groupby("Team", dropna=False)
 
         games = g["Match"].nunique().rename("Games")
         tot_throw = g.size().rename("Total throw-ins")
@@ -2684,22 +2706,12 @@ g = season_df_used.groupby("Team", dropna=False)
             st.stop()
 
         season_cmp["Delay (s)"] = pd.to_numeric(season_cmp["Delay (s)"], errors="coerce")
+        season_cmp["Team"] = season_cmp["Team"].apply(normalize_team_name)
         season_cmp["Shot xG (30s)"] = pd.to_numeric(season_cmp["Shot xG (30s)"], errors="coerce")
         season_cmp["is_outlier"] = _mark_outliers(season_cmp)
         season_cmp_used = season_cmp[~season_cmp["is_outlier"]].copy()
 
-        
-# --- FIX: unify Sønderjyske naming (comparison) ---
-season_cmp["Team"] = season_cmp["Team"].replace({
-    "SønderjyskE": "Sønderjyske",
-    "Sønderjyske": "Sønderjyske",
-})
-season_cmp_used["Team"] = season_cmp_used["Team"].replace({
-    "SønderjyskE": "Sønderjyske",
-    "Sønderjyske": "Sønderjyske",
-})
-
-gcmp = season_cmp_used.groupby("Team", dropna=False)
+        gcmp = season_cmp_used.groupby("Team", dropna=False)
         games_cmp = gcmp["Match"].nunique().rename("Games")
         tot_throw_cmp = gcmp.size().rename("Total throw-ins")
         avg_delay_cmp = gcmp["Delay (s)"].mean().rename("Avg. delay (s)")
@@ -2908,6 +2920,7 @@ gcmp = season_cmp_used.groupby("Team", dropna=False)
             st.stop()
 
         indiv_df["Delay (s)"] = pd.to_numeric(indiv_df["Delay (s)"], errors="coerce")
+        indiv_df["Team"] = indiv_df["Team"].apply(normalize_team_name)
         indiv_df["Shot xG (30s)"] = pd.to_numeric(indiv_df["Shot xG (30s)"], errors="coerce").fillna(0.0)
         indiv_df["Distance (m)"] = pd.to_numeric(indiv_df["Distance (m)"], errors="coerce")
         indiv_df["is_outlier"] = _mark_outliers(indiv_df)
@@ -3092,7 +3105,7 @@ gcmp = season_cmp_used.groupby("Team", dropna=False)
 
         if "Taker" not in icons_df.columns:
             icons_df["Taker"] = icons_df.get("Taker id", "").fillna("").replace({"": "Unknown"})
-        icons_df["Team"] = icons_df["Team"].fillna("Unknown")
+        icons_df["Team"] = icons_df["Team"].fillna("Unknown").apply(normalize_team_name)
         icons_df["Taker"] = icons_df["Taker"].fillna("Unknown")
 
         teams_sorted = sorted(t for t in icons_df["Team"].dropna().unique())
@@ -3422,6 +3435,8 @@ def render_xg_module():
             st.stop()
 
         xg_df = pd.DataFrame(all_rows)
+    if "Team" in xg_df.columns:
+        xg_df["Team"] = xg_df["Team"].apply(normalize_team_name)
         g = xg_df.groupby("Team", dropna=False)
         out = pd.DataFrame({
             "Games": g["Match"].nunique(),
