@@ -1471,6 +1471,7 @@ def render_xg_module():
             st.stop()
 
         season_df = pd.concat(all_rows, ignore_index=True)
+        season_df["Team"] = season_df["Team"].astype(str).str.strip().apply(normalize_team_name)
 
         if "Thrown into the box" not in season_df.columns and "End in box" in season_df.columns:
             season_df["Thrown into the box"] = season_df["End in box"]
@@ -2469,6 +2470,7 @@ def render_throwins_module():
             st.stop()
 
         season_df = pd.concat(all_rows, ignore_index=True)
+        season_df["Team"] = season_df["Team"].astype(str).str.strip().apply(normalize_team_name)
 
         if "Thrown into the box" not in season_df.columns and "End in box" in season_df.columns:
             season_df["Thrown into the box"] = season_df["End in box"]
