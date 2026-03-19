@@ -19,12 +19,59 @@ import altair as alt
 def normalize_team_name(name):
     if not isinstance(name, str):
         return name
-    
+
+    n = (
+        name.replace("\xa0", " ")
+            .strip()
+            .lower()
+    )
+
     mapping = {
-        "SønderjyskE": "Sønderjyske",
-        "Sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske fodbold": "Sønderjyske",
+        "sønderjyske ": "Sønderjyske",
+        "sønderjyskee": "Sønderjyske",   # hvis der skulle komme sær variant
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyske": "Sønderjyske",
+        "sønderjyskee": "Sønderjyske",
+        "sonderjyske": "Sønderjyske",
+        "sonderjyske fodbold": "Sønderjyske",
     }
-    
+
+    return mapping.get(n, name.strip())
     return mapping.get(name, name)
 # === SHOTS MODULE: constants ===
 PHASE_LABELS = {
