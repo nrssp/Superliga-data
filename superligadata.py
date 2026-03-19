@@ -1268,7 +1268,7 @@ def _enrich_throwins_with_sequences(
 # --- Outlier / retention / versions ------------------------------------------
 OUTLIER_THR = 40
 BALL_RETENTION_THR_S = 7.0
-SCHEMA_VER = 15  # cache-bust
+SCHEMA_VER = 16  # cache-bust
 # -----------------------------------------------------------------------------
 
 def _mark_outliers(df: pd.DataFrame, thr: float = OUTLIER_THR) -> pd.Series:
@@ -1541,10 +1541,6 @@ def render_xg_module():
         season_df["is_outlier"] = _mark_outliers(season_df)
         season_df_used = season_df[~season_df["is_outlier"]].copy()
 
-        
-                season_df["Team"] = season_df["Team"].apply(normalize_team_name)
-        season_df_used["Team"] = season_df_used["Team"].apply(normalize_team_name)
-
         g = season_df_used.groupby("Team", dropna=False)
 
         games = g["Match"].nunique().rename("Games")
@@ -1716,7 +1712,6 @@ def render_xg_module():
         # Aggreger pr. hold
         
                 season_cmp["Team"] = season_cmp["Team"].apply(normalize_team_name)
-        season_cmp_used["Team"] = season_cmp_used["Team"].apply(normalize_team_name)
 
         gcmp = season_cmp_used.groupby("Team", dropna=False)
         games_cmp = gcmp["Match"].nunique().rename("Games")
