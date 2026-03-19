@@ -16,53 +16,32 @@ import os, io, zipfile, requests
 # === SHOTS MODULE: imports ===
 import altair as alt
 
-def canonical_team_key(name):
-    if not isinstance(name, str):
-        return ""
-
-    s = name.replace("\xa0", " ").strip()
-    s = unicodedata.normalize("NFKC", s).casefold()
-
-    s = (
-        s.replace("æ", "ae")
-         .replace("ø", "oe")
-         .replace("å", "aa")
-    )
-
-    s = re.sub(r"[^a-z0-9]+", "", s)
-
-    if s in {
-        "sonderjyske",
-        "soenderjyske",
-        "sonderjyskefodbold",
-        "soenderjyskefodbold",
-        "snderjyske",
-        "snderjyskefodbold",
-    }:
-        return "sonderjyske"
-
-    return s
-
-
 def normalize_team_name(name):
-    key = canonical_team_key(name)
-    if key == "sonderjyske":
-        return "Sønderjyske"
-    return str(name).replace("\xa0", " ").strip() if isinstance(name, str) else name
+    """Normalize all Sønderjyske variants to one club name."""
+    if not isinstance(name, str):
+        return name
 
-    # Erstat danske tegn før ascii-normalisering
-    norm = (
-        raw.replace("Æ", "Ae").replace("Ø", "Oe").replace("Å", "Aa")
-           .replace("æ", "ae").replace("ø", "oe").replace("å", "aa")
-    )
-    norm = unicodedata.normalize("NFKD", norm).encode("ascii", "ignore").decode("ascii")
+    raw = name.replace("\xa0", " ").strip()
+
+    direct = {
+        "Sønderjyske": "Sønderjyske",
+        "Sønderjyske Fodbold": "Sønderjyske",
+        "Sonderjyske": "Sønderjyske",
+        "Sonderjyske Fodbold": "Sønderjyske",
+    }
+    if raw in direct:
+        return direct[raw]
+
+    norm = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode("ascii")
     norm = re.sub(r"\s+", " ", norm).strip().lower()
 
-    if norm in {"sonderjyske", "sonderjyske fodbold", "soenderjyske", "soenderjyske fodbold"}:
+    if norm in {
+        "sonderjyske",
+        "sonderjyske fodbold",
+    }:
         return "Sønderjyske"
 
     return raw
-
 
 # === SHOTS MODULE: constants ===
 PHASE_LABELS = {
@@ -113,8 +92,10 @@ def build_team_maps_from_f7(f7_path: Path):
     for team in root.findall(".//Team"):
         tid = team.get("uID") or ""
         num = tid[1:] if tid.startswith("t") else tid
-        name = (team.findtext("./Name") or "").strip()
-        short = (team.findtext("./ShortName") or "").strip()
+        raw_name = (team.findtext("./Name") or "").strip()
+        raw_short = (team.findtext("./ShortName") or "").strip()
+        name = normalize_team_name(raw_name)
+        short = normalize_team_name(raw_short) if raw_short else raw_short
         for key in filter(None, [tid, num]):
             names[key] = name or names.get(key, key)
             shorts[key] = short or shorts.get(key, short or name or key)
@@ -950,7 +931,8 @@ def build_team_maps_from_f7(f7_path: Path):
         for team in root.findall(".//Team"):
             uid = team.attrib.get("uID")
             name_el = team.find("Name")
-            name = (name_el.text if name_el is not None else None) or team.attrib.get("TeamName")
+            raw_name = (name_el.text if name_el is not None else None) or team.attrib.get("TeamName")
+            name = normalize_team_name(raw_name)
             if uid and name:
                 name_map[uid] = name
                 if uid.startswith("t") and uid[1:].isdigit():
@@ -1070,7 +1052,7 @@ def _parse_game_events(game_elem, team_name_map=None, team_side_map=None):
         end_x = _safe_float(qmap.get(140))
         end_y = _safe_float(qmap.get(141))
 
-        team_name = team_name_map.get(team_id, team_id) if team_name_map else team_id
+        team_name = normalize_team_name(team_name_map.get(team_id, team_id) if team_name_map else team_id)
         team_side = team_side_map.get(team_id) if team_side_map else None
         events.append({
             "event_id": event_id,
@@ -1275,7 +1257,7 @@ def _enrich_throwins_with_sequences(
 # --- Outlier / retention / versions ------------------------------------------
 OUTLIER_THR = 40
 BALL_RETENTION_THR_S = 7.0
-SCHEMA_VER = 17  # cache-bust
+SCHEMA_VER = 18  # cache-bust
 # -----------------------------------------------------------------------------
 
 def _mark_outliers(df: pd.DataFrame, thr: float = OUTLIER_THR) -> pd.Series:
@@ -1505,9 +1487,6 @@ def render_xg_module():
             st.stop()
 
         season_df = pd.concat(all_rows, ignore_index=True)
-        season_df["Team_key"] = season_df["Team"].apply(canonical_team_key)
-        season_df["Team"] = season_df["Team_key"].apply(lambda x: "Sønderjyske" if x == "sonderjyske" else x)
-        season_df["Team"] = season_df["Team"].astype(str).str.strip().apply(normalize_team_name)
 
         if "Thrown into the box" not in season_df.columns and "End in box" in season_df.columns:
             season_df["Thrown into the box"] = season_df["End in box"]
@@ -1549,7 +1528,7 @@ def render_xg_module():
         season_df["is_outlier"] = _mark_outliers(season_df)
         season_df_used = season_df[~season_df["is_outlier"]].copy()
 
-        g = season_df_used.groupby("Team_key", dropna=False)
+        g = season_df_used.groupby("Team", dropna=False)
 
         games = g["Match"].nunique().rename("Games")
         tot_throw = g.size().rename("Total throw-ins")
@@ -2235,7 +2214,6 @@ def render_xg_module():
             rows = collect_round_data(round_dir)
             if rows:
                 df = pd.DataFrame(rows)
-                df["Team"] = df["Team"].apply(normalize_team_name)
                 if "_sortdate" in df.columns:
                     df = df.sort_values("_sortdate", na_position="last")
                 st.subheader(round_dir.name)
@@ -2250,7 +2228,6 @@ def render_xg_module():
             rows = collect_round_data(round_choice)
             if rows:
                 matches_df = pd.DataFrame(rows)
-                df["Team"] = df["Team"].apply(normalize_team_name)
                 match_choice = st.selectbox("Choose game", matches_df["Match"])
 
                 f24_file = matches_df.loc[matches_df["Match"] == match_choice, "F24 file"].values[0]
@@ -2506,9 +2483,6 @@ def render_throwins_module():
             st.stop()
 
         season_df = pd.concat(all_rows, ignore_index=True)
-        season_df["Team_key"] = season_df["Team"].apply(canonical_team_key)
-        season_df["Team"] = season_df["Team_key"].apply(lambda x: "Sønderjyske" if x == "sonderjyske" else x)
-        season_df["Team"] = season_df["Team"].astype(str).str.strip().apply(normalize_team_name)
 
         if "Thrown into the box" not in season_df.columns and "End in box" in season_df.columns:
             season_df["Thrown into the box"] = season_df["End in box"]
@@ -2549,7 +2523,7 @@ def render_throwins_module():
         season_df["is_outlier"] = _mark_outliers(season_df)
         season_df_used = season_df[~season_df["is_outlier"]].copy()
 
-        g = season_df_used.groupby("Team_key", dropna=False)
+        g = season_df_used.groupby("Team", dropna=False)
 
         games = g["Match"].nunique().rename("Games")
         tot_throw = g.size().rename("Total throw-ins")
@@ -3180,6 +3154,7 @@ def render_throwins_module():
         for round_dir in list_round_dirs(DATA_BASE):
             rows = collect_round_data(round_dir)
             if rows:
+                df = pd.DataFrame(rows)
                 if "_sortdate" in df.columns:
                     df = df.sort_values("_sortdate", na_position="last")
                 st.subheader(round_dir.name)
@@ -3193,6 +3168,7 @@ def render_throwins_module():
             round_choice = st.selectbox("Choose round/s", rounds, format_func=lambda p: p.name)
             rows = collect_round_data(round_choice)
             if rows:
+                matches_df = pd.DataFrame(rows)
                 match_choice = st.selectbox("Choose game", matches_df["Match"])
 
                 f24_file = matches_df.loc[matches_df["Match"] == match_choice, "F24 file"].values[0]
