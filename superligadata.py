@@ -41,6 +41,7 @@ def normalize_team_name(name):
 
     if norm in {
         "sonderjyske",
+        "SønderjyskE"
         "sonderjyskee",
         "sonderjyske fodbold",
     }:
@@ -1711,7 +1712,7 @@ def render_xg_module():
 
         # Aggreger pr. hold
         
-                season_cmp["Team"] = season_cmp["Team"].apply(normalize_team_name)
+        season_cmp["Team"] = season_cmp["Team"].apply(normalize_team_name)
 
         gcmp = season_cmp_used.groupby("Team", dropna=False)
         games_cmp = gcmp["Match"].nunique().rename("Games")
