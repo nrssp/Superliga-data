@@ -21,10 +21,27 @@ def normalize_team_name(name):
         return name
 
     raw = name.replace("\xa0", " ").strip()
-    norm = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode("ascii")
+
+    # Håndtér kendte Sønderjyske-varianter direkte først
+    direct = {
+        "Sønderjyske": "Sønderjyske",
+        "SønderjyskE": "Sønderjyske",
+        "Sønderjyske Fodbold": "Sønderjyske",
+        "Sonderjyske": "Sønderjyske",
+        "Sonderjyske Fodbold": "Sønderjyske",
+    }
+    if raw in direct:
+        return direct[raw]
+
+    # Erstat danske tegn før ascii-normalisering
+    norm = (
+        raw.replace("Æ", "Ae").replace("Ø", "Oe").replace("Å", "Aa")
+           .replace("æ", "ae").replace("ø", "oe").replace("å", "aa")
+    )
+    norm = unicodedata.normalize("NFKD", norm).encode("ascii", "ignore").decode("ascii")
     norm = re.sub(r"\s+", " ", norm).strip().lower()
 
-    if norm in {"sonderjyske", "sonderjyske fodbold"}:
+    if norm in {"sonderjyske", "sonderjyske fodbold", "soenderjyske", "soenderjyske fodbold"}:
         return "Sønderjyske"
 
     return raw
