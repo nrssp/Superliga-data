@@ -1786,7 +1786,6 @@ def render_xg_module():
             "Brondby": "Brøndby IF",
             "Nordsjaelland": "FC Nordsjælland",
             "OB": "Odense Boldklub",
-            "Sonderjyske": "SønderjyskE",
             "Lyngby": "Lyngby BK",
             "Randers": "Randers FC",
             "Vejle": "Vejle BK",
