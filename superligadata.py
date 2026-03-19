@@ -21,58 +21,25 @@ def normalize_team_name(name):
         return name
 
     n = (
-        name.replace("\xa0", " ")
-            .strip()
-            .lower()
+        unicodedata.normalize("NFKD", name)
+        .encode("ascii", "ignore")
+        .decode("ascii")
+        .replace("\xa0", " ")
+        .strip()
+        .lower()
     )
+    n = re.sub(r"[^a-z0-9]+", " ", n)
+    n = re.sub(r"\s+", " ", n).strip()
 
     mapping = {
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske fodbold": "Sønderjyske",
-        "sønderjyske ": "Sønderjyske",
-        "sønderjyskee": "Sønderjyske",   # hvis der skulle komme sær variant
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyske": "Sønderjyske",
-        "sønderjyskee": "Sønderjyske",
         "sonderjyske": "Sønderjyske",
         "sonderjyske fodbold": "Sønderjyske",
+        "sonderjyskee": "Sønderjyske",
     }
 
     return mapping.get(n, name.strip())
-    return mapping.get(name, name)
+
+
 # === SHOTS MODULE: constants ===
 PHASE_LABELS = {
     22: "Regular play",
@@ -891,6 +858,11 @@ def get_match_info_from_f24(f24_path: Path):
     except Exception:
         pass
 
+    if home:
+        home = normalize_team_name(home)
+    if away:
+        away = normalize_team_name(away)
+
     match_name = f"{home} - {away}" if home and away else f24_path.stem
     match_date = None
     if date:
@@ -960,9 +932,10 @@ def build_team_maps_from_f7(f7_path: Path):
             name_el = team.find("Name")
             name = (name_el.text if name_el is not None else None) or team.attrib.get("TeamName")
             if uid and name:
-                name_map[uid] = name
+                canon_name = normalize_team_name(name)
+                name_map[uid] = canon_name
                 if uid.startswith("t") and uid[1:].isdigit():
-                    name_map[uid[1:]] = name
+                    name_map[uid[1:]] = canon_name
         for td in root.findall(".//MatchData/TeamData"):
             tref = td.attrib.get("TeamRef"); side = td.attrib.get("Side")
             if tref and side:
