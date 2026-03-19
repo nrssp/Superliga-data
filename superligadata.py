@@ -16,22 +16,39 @@ import os, io, zipfile, requests
 # === SHOTS MODULE: imports ===
 import altair as alt
 
-def normalize_team_name(name):
+def canonical_team_key(name):
     if not isinstance(name, str):
-        return name
+        return ""
 
-    raw = name.replace("\xa0", " ").strip()
+    s = name.replace("\xa0", " ").strip()
+    s = unicodedata.normalize("NFKC", s).casefold()
 
-    # Håndtér kendte Sønderjyske-varianter direkte først
-    direct = {
-        "Sønderjyske": "Sønderjyske",
-        "SønderjyskE": "Sønderjyske",
-        "Sønderjyske Fodbold": "Sønderjyske",
-        "Sonderjyske": "Sønderjyske",
-        "Sonderjyske Fodbold": "Sønderjyske",
-    }
-    if raw in direct:
-        return direct[raw]
+    s = (
+        s.replace("æ", "ae")
+         .replace("ø", "oe")
+         .replace("å", "aa")
+    )
+
+    s = re.sub(r"[^a-z0-9]+", "", s)
+
+    if s in {
+        "sonderjyske",
+        "soenderjyske",
+        "sonderjyskefodbold",
+        "soenderjyskefodbold",
+        "snderjyske",
+        "snderjyskefodbold",
+    }:
+        return "sonderjyske"
+
+    return s
+
+
+def normalize_team_name(name):
+    key = canonical_team_key(name)
+    if key == "sonderjyske":
+        return "Sønderjyske"
+    return str(name).replace("\xa0", " ").strip() if isinstance(name, str) else name
 
     # Erstat danske tegn før ascii-normalisering
     norm = (
