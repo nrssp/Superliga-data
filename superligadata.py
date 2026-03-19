@@ -265,7 +265,6 @@ def parse_shots_from_match(f24_path: str, f70_path: str, f7_path: str | None) ->
         })
 
     df = pd.DataFrame(rows)
-    df["Team"] = df["Team"].apply(normalize_team_name)
     df["time_s"] = df["min"].astype(float)*60 + df["sec"].astype(float)
     return df.sort_values(["time_s", "event_id"]).reset_index(drop=True)
 
@@ -2241,7 +2240,6 @@ def render_xg_module():
             rows = collect_round_data(round_dir)
             if rows:
                 df = pd.DataFrame(rows)
-                df["Team"] = df["Team"].apply(normalize_team_name)
                 if "_sortdate" in df.columns:
                     df = df.sort_values("_sortdate", na_position="last")
                 st.subheader(round_dir.name)
@@ -2256,7 +2254,6 @@ def render_xg_module():
             rows = collect_round_data(round_choice)
             if rows:
                 matches_df = pd.DataFrame(rows)
-                df["Team"] = df["Team"].apply(normalize_team_name)
                 match_choice = st.selectbox("Choose game", matches_df["Match"])
 
                 f24_file = matches_df.loc[matches_df["Match"] == match_choice, "F24 file"].values[0]
@@ -3184,7 +3181,6 @@ def render_throwins_module():
             rows = collect_round_data(round_dir)
             if rows:
                 df = pd.DataFrame(rows)
-                df["Team"] = df["Team"].apply(normalize_team_name)
                 if "_sortdate" in df.columns:
                     df = df.sort_values("_sortdate", na_position="last")
                 st.subheader(round_dir.name)
@@ -3199,7 +3195,6 @@ def render_throwins_module():
             rows = collect_round_data(round_choice)
             if rows:
                 matches_df = pd.DataFrame(rows)
-                df["Team"] = df["Team"].apply(normalize_team_name)
                 match_choice = st.selectbox("Choose game", matches_df["Match"])
 
                 f24_file = matches_df.loc[matches_df["Match"] == match_choice, "F24 file"].values[0]
