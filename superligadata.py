@@ -3183,8 +3183,6 @@ def render_throwins_module():
         for round_dir in list_round_dirs(DATA_BASE):
             rows = collect_round_data(round_dir)
             if rows:
-                df = pd.DataFrame(rows)
-                df["Team"] = df["Team"].apply(normalize_team_name)
                 if "_sortdate" in df.columns:
                     df = df.sort_values("_sortdate", na_position="last")
                 st.subheader(round_dir.name)
@@ -3198,8 +3196,6 @@ def render_throwins_module():
             round_choice = st.selectbox("Choose round/s", rounds, format_func=lambda p: p.name)
             rows = collect_round_data(round_choice)
             if rows:
-                matches_df = pd.DataFrame(rows)
-                df["Team"] = df["Team"].apply(normalize_team_name)
                 match_choice = st.selectbox("Choose game", matches_df["Match"])
 
                 f24_file = matches_df.loc[matches_df["Match"] == match_choice, "F24 file"].values[0]
