@@ -1505,6 +1505,8 @@ def render_xg_module():
             st.stop()
 
         season_df = pd.concat(all_rows, ignore_index=True)
+        season_df["Team_key"] = season_df["Team"].apply(canonical_team_key)
+        season_df["Team"] = season_df["Team_key"].apply(lambda x: "Sønderjyske" if x == "sonderjyske" else x)
         season_df["Team"] = season_df["Team"].astype(str).str.strip().apply(normalize_team_name)
 
         if "Thrown into the box" not in season_df.columns and "End in box" in season_df.columns:
@@ -1547,7 +1549,7 @@ def render_xg_module():
         season_df["is_outlier"] = _mark_outliers(season_df)
         season_df_used = season_df[~season_df["is_outlier"]].copy()
 
-        g = season_df_used.groupby("Team", dropna=False)
+        g = season_df_used.groupby("Team_key", dropna=False)
 
         games = g["Match"].nunique().rename("Games")
         tot_throw = g.size().rename("Total throw-ins")
@@ -2504,6 +2506,8 @@ def render_throwins_module():
             st.stop()
 
         season_df = pd.concat(all_rows, ignore_index=True)
+        season_df["Team_key"] = season_df["Team"].apply(canonical_team_key)
+        season_df["Team"] = season_df["Team_key"].apply(lambda x: "Sønderjyske" if x == "sonderjyske" else x)
         season_df["Team"] = season_df["Team"].astype(str).str.strip().apply(normalize_team_name)
 
         if "Thrown into the box" not in season_df.columns and "End in box" in season_df.columns:
@@ -2545,7 +2549,7 @@ def render_throwins_module():
         season_df["is_outlier"] = _mark_outliers(season_df)
         season_df_used = season_df[~season_df["is_outlier"]].copy()
 
-        g = season_df_used.groupby("Team", dropna=False)
+        g = season_df_used.groupby("Team_key", dropna=False)
 
         games = g["Match"].nunique().rename("Games")
         tot_throw = g.size().rename("Total throw-ins")
