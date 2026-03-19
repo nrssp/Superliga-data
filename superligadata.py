@@ -68,9 +68,10 @@ def build_team_maps_from_f7(f7_path: Path):
         num = tid[1:] if tid.startswith("t") else tid
         name = (team.findtext("./Name") or "").strip()
         short = (team.findtext("./ShortName") or "").strip()
+        canon_name = normalize_team_name(name)
         for key in filter(None, [tid, num]):
-            names[key] = name or names.get(key, key)
-            shorts[key] = short or shorts.get(key, short or name or key)
+            names[key] = canon_name or names.get(key, key)
+            shorts[key] = short or shorts.get(key, short or canon_name or key)
     return names, shorts
 
 def list_round_dirs(base_dir: str) -> list[Path]:
